@@ -50,6 +50,7 @@ class GINClassifier(torch.nn.Module):
             torch.nn.Dropout(dropout),
             torch.nn.Linear(hidden_dim // 2, 2),
         )
+
         self.dropout = dropout
 
     def forward(
@@ -73,4 +74,5 @@ class GINClassifier(torch.nn.Module):
             x = conv(x, edge_index)
             x = bn(x)
             x = F.relu(x)
+
         return x
