@@ -8,10 +8,10 @@ from pathlib import Path
 
 import xxhash
 
-from trojan_detector.backend.core.history import History
-from trojan_detector.backend.core.outcome import StageOutcome
-from trojan_detector.backend.file_ingestion.filter import ExtensionFilter
-from trojan_detector.backend.file_ingestion.models import DirectoryManifest, FileEntry
+from backend.core.history import History
+from backend.core.outcome import StageOutcome
+from backend.file_ingestion.filter import ExtensionFilter
+from backend.file_ingestion.models import DirectoryManifest, FileEntry
 
 logger = logging.getLogger(__name__)
 
