@@ -10,14 +10,14 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
-from trojan_detector.backend.core.exceptions import ClassificationError
-from trojan_detector.backend.core.history import History
-from trojan_detector.backend.core.outcome import StageOutcome
-from trojan_detector.backend.netlist_graph_builder.models import CircuitGraph
-from trojan_detector.backend.trojan_classifier.architectures.gat import GATClassifier
-from trojan_detector.backend.trojan_classifier.architectures.gcn import GCNClassifier
-from trojan_detector.backend.trojan_classifier.architectures.gin import GINClassifier
-from trojan_detector.backend.trojan_classifier.models import (
+from backend.core.exceptions import ClassificationError
+from backend.core.history import History
+from backend.core.outcome import StageOutcome
+from backend.netlist_graph_builder.models import CircuitGraph
+from backend.trojan_classifier.architectures.gat import GATClassifier
+from backend.trojan_classifier.architectures.gcn import GCNClassifier
+from backend.trojan_classifier.architectures.gin import GINClassifier
+from backend.trojan_classifier.models import (
     ClassificationResult,
     TrojanVerdict,
 )
