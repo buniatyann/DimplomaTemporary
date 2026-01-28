@@ -68,10 +68,12 @@ class StageRecord:
             "errors": self.errors,
             "data": self.data,
         }
+        
         if self.started_at is not None:
             result["started_at"] = self.started_at
         if self.ended_at is not None:
             result["ended_at"] = self.ended_at
+        
         return result
 
 

@@ -1,15 +1,15 @@
 """Core components shared across all pipeline stages."""
 
-from trojan_detector.backend.core.exceptions import (
+from backend.core.exceptions import (
     ClassificationError,
     GraphBuildError,
     ParseError,
     ReportGenerationError,
     SynthesisError,
 )
-from trojan_detector.backend.core.history import History
-from trojan_detector.backend.core.outcome import StageOutcome
-from trojan_detector.backend.core.pipeline import DetectionPipeline
+from backend.core.history import History
+from backend.core.outcome import StageOutcome
+from backend.core.pipeline import DetectionPipeline
 
 __all__ = [
     "DetectionPipeline",
