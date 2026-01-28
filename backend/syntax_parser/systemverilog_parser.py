@@ -5,16 +5,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from trojan_detector.backend.core.exceptions import ParseError
-from trojan_detector.backend.core.history import History
-from trojan_detector.backend.syntax_parser.models import (
+from backend.core.exceptions import ParseError
+from backend.core.history import History
+from backend.syntax_parser.models import (
     Gate,
     ParsedModule,
     Port,
     PortDirection,
     Wire,
 )
-from trojan_detector.backend.syntax_parser.verilog_parser import _normalize_gate_type
+from backend.syntax_parser.verilog_parser import _normalize_gate_type
 
 logger = logging.getLogger(__name__)
 

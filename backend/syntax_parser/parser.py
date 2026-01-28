@@ -6,17 +6,17 @@ import logging
 import time
 from pathlib import Path
 
-from trojan_detector.backend.core.exceptions import ParseError
-from trojan_detector.backend.core.history import History
-from trojan_detector.backend.core.outcome import StageOutcome
-from trojan_detector.backend.file_ingestion.models import (
+from backend.core.exceptions import ParseError
+from backend.core.history import History
+from backend.core.outcome import StageOutcome
+from backend.file_ingestion.models import (
     DirectoryManifest,
     FileEntry,
     FileType,
 )
-from trojan_detector.backend.syntax_parser.models import ParsedModule
-from trojan_detector.backend.syntax_parser.systemverilog_parser import SystemVerilogParser
-from trojan_detector.backend.syntax_parser.verilog_parser import VerilogParser
+from backend.syntax_parser.models import ParsedModule
+from backend.syntax_parser.systemverilog_parser import SystemVerilogParser
+from backend.syntax_parser.verilog_parser import VerilogParser
 
 logger = logging.getLogger(__name__)
 
