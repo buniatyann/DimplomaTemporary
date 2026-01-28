@@ -6,9 +6,9 @@ import logging
 import tempfile
 from pathlib import Path
 
-from trojan_detector.backend.core.exceptions import ParseError
-from trojan_detector.backend.core.history import History
-from trojan_detector.backend.syntax_parser.models import (
+from backend.core.exceptions import ParseError
+from backend.core.history import History
+from backend.syntax_parser.models import (
     Gate,
     ParsedModule,
     Port,
