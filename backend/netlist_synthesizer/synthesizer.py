@@ -7,12 +7,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-from trojan_detector.backend.core.exceptions import SynthesisError
-from trojan_detector.backend.core.history import History
-from trojan_detector.backend.core.outcome import StageOutcome
-from trojan_detector.backend.netlist_synthesizer.models import CellStatistics, SynthesisResult
-from trojan_detector.backend.netlist_synthesizer.yosys_runner import YosysRunner
-from trojan_detector.backend.syntax_parser.models import ParsedModule
+from backend.core.exceptions import SynthesisError
+from backend.core.history import History
+from backend.core.outcome import StageOutcome
+from backend.netlist_synthesizer.models import CellStatistics, SynthesisResult
+from backend.netlist_synthesizer.yosys_runner import YosysRunner
+from backend.syntax_parser.models import ParsedModule
 
 logger = logging.getLogger(__name__)
 
