@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import torch
 
-
 class EdgeEncoder:
     """Generates edge features capturing connection properties."""
 

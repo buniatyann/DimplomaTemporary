@@ -10,13 +10,13 @@ from typing import Any
 import torch
 from torch_geometric.data import Data
 
-from trojan_detector.backend.core.exceptions import GraphBuildError
-from trojan_detector.backend.core.history import History
-from trojan_detector.backend.core.outcome import StageOutcome
-from trojan_detector.backend.netlist_graph_builder.edge_encoder import EdgeEncoder
-from trojan_detector.backend.netlist_graph_builder.models import CircuitGraph, NodeFeatures
-from trojan_detector.backend.netlist_graph_builder.node_encoder import NodeEncoder
-from trojan_detector.backend.netlist_synthesizer.models import SynthesisResult
+from backend.core.exceptions import GraphBuildError
+from backend.core.history import History
+from backend.core.outcome import StageOutcome
+from backend.netlist_graph_builder.edge_encoder import EdgeEncoder
+from backend.netlist_graph_builder.models import CircuitGraph, NodeFeatures
+from backend.netlist_graph_builder.node_encoder import NodeEncoder
+from backend.netlist_synthesizer.models import SynthesisResult
 
 logger = logging.getLogger(__name__)
 
