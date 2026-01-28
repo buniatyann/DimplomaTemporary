@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "trojan-detector"
+version = "0.1.0"
+description = "Automated hardware trojan detection in gate-level netlists using Graph Neural Networks"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Narek"},
+]
+dependencies = [
+    "pyverilog>=1.3.0",
+    "pyslang>=7.0",
+    "torch>=2.0.0",
+    "torch-geometric>=2.4.0",
+    "pydantic>=2.0.0",
+    "reportlab>=4.0.0",
+    "xxhash>=3.0.0",
+]
+
+[project.optional-dependencies]
+gui = [
+    "PyQt6>=6.5.0",
+    "qasync>=0.27.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "pytest-benchmark>=4.0",
+    "mypy>=1.8",
+    "ruff>=0.2",
+]
+
+[project.scripts]
+trojan-detector = "trojan_detector.main:main"
+
+[tool.setuptools.packages.find]
+include = ["trojan_detector*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["trojan_detector/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
