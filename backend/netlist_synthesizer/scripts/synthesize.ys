@@ -1,0 +1,10 @@
+# Yosys full synthesis script
+# Performs technology mapping and optimization
+{{READ_FILES}}
+hierarchy -check
+proc
+opt
+techmap
+opt
+clean
+write_json {{JSON_OUTPUT}}
