@@ -29,6 +29,7 @@ class ParseError(TrojanDetectorError):
             ctx["line"] = line
         if column is not None:
             ctx["column"] = column
+       
         super().__init__(message, ctx)
         self.file_path = file_path
         self.line = line
@@ -47,6 +48,7 @@ class SynthesisError(TrojanDetectorError):
         ctx = context or {}
         if yosys_output:
             ctx["yosys_output"] = yosys_output
+       
         super().__init__(message, ctx)
         self.yosys_output = yosys_output
 

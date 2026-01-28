@@ -6,8 +6,8 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
-from trojan_detector.backend.core.history import History
-from trojan_detector.backend.core.outcome import StageOutcome
+from backend.core.history import History
+from backend.core.outcome import StageOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +54,12 @@ class DetectionPipeline:
         Returns:
             Dictionary containing the analysis report and export paths.
         """
-        from trojan_detector.backend.analysis_summarizer.summarizer import AnalysisSummarizer
-        from trojan_detector.backend.file_ingestion.collector import FileCollector
-        from trojan_detector.backend.netlist_graph_builder.builder import NetlistGraphBuilder
-        from trojan_detector.backend.netlist_synthesizer.synthesizer import NetlistSynthesizer
-        from trojan_detector.backend.syntax_parser.parser import SyntaxParser
-        from trojan_detector.backend.trojan_classifier.classifier import TrojanClassifier
+        from backend.analysis_summarizer.summarizer import AnalysisSummarizer
+        from backend.file_ingestion.collector import FileCollector
+        from backend.netlist_graph_builder.builder import NetlistGraphBuilder
+        from backend.netlist_synthesizer.synthesizer import NetlistSynthesizer
+        from backend.syntax_parser.parser import SyntaxParser
+        from backend.trojan_classifier.classifier import TrojanClassifier
 
         if export_formats is None:
             export_formats = ["json"]
@@ -116,7 +116,7 @@ class DetectionPipeline:
         export_formats: list[str],
     ) -> dict[str, Any]:
         """Run the analysis summarizer and return results."""
-        from trojan_detector.backend.analysis_summarizer.summarizer import AnalysisSummarizer
+        from backend.analysis_summarizer.summarizer import AnalysisSummarizer
 
         summarizer = AnalysisSummarizer(history)
         report = summarizer.compile()
@@ -144,7 +144,7 @@ class DetectionPipeline:
         Returns:
             List of result dictionaries, one per processed file.
         """
-        from trojan_detector.backend.file_ingestion.collector import FileCollector
+        from backend.file_ingestion.collector import FileCollector
 
         if not input_path.is_dir():
             return [self.run(input_path, output_dir, export_formats)]

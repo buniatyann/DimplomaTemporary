@@ -99,7 +99,9 @@ class _TimedContext:
                 duration=duration,
                 metadata=self._metadata,
             )
+           
             return True  # suppress exception
+        
         if self._error is not None:
             self.outcome = StageOutcome(
                 success=False,
@@ -116,4 +118,5 @@ class _TimedContext:
                 duration=duration,
                 metadata=self._metadata,
             )
+
         return False
