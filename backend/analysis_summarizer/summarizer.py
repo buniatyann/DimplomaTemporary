@@ -6,8 +6,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from trojan_detector.backend.analysis_summarizer.models import AnalysisReport, ReportSection
-from trojan_detector.backend.core.history import History
+from backend.analysis_summarizer.models import AnalysisReport, ReportSection
+from backend.core.history import History
 
 logger = logging.getLogger(__name__)
 
@@ -84,19 +84,19 @@ class AnalysisSummarizer:
 
         for fmt in formats:
             if fmt == "json":
-                from trojan_detector.backend.analysis_summarizer.exporters.json_exporter import (
+                from backend.analysis_summarizer.exporters.json_exporter import (
                     JsonExporter,
                 )
                 path = JsonExporter().export(report, output_dir)
                 paths.append(path)
             elif fmt == "pdf":
-                from trojan_detector.backend.analysis_summarizer.exporters.pdf_exporter import (
+                from backend.analysis_summarizer.exporters.pdf_exporter import (
                     PdfExporter,
                 )
                 path = PdfExporter().export(report, output_dir)
                 paths.append(path)
             elif fmt == "text":
-                from trojan_detector.backend.analysis_summarizer.exporters.text_exporter import (
+                from backend.analysis_summarizer.exporters.text_exporter import (
                     TextExporter,
                 )
                 path = TextExporter().export(report, output_dir)
