@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from trojan_detector.backend.core.exceptions import SynthesisError
+from backend.core.exceptions import SynthesisError
 
 logger = logging.getLogger(__name__)
 
