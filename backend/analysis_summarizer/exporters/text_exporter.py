@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from trojan_detector.backend.analysis_summarizer.models import AnalysisReport
+from analysis_summarizer.models import AnalysisReport
 
 
 class TextExporter:

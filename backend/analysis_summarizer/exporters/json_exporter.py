@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from trojan_detector.backend.analysis_summarizer.models import AnalysisReport
+from analysis_summarizer.models import AnalysisReport
 
 
 class JsonExporter:
