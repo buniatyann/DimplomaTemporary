@@ -1,0 +1,165 @@
+"""DetectionPipeline orchestrator for sequential stage execution."""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any, Callable
+
+from trojan_detector.backend.core.history import History
+from trojan_detector.backend.core.outcome import StageOutcome
+
+logger = logging.getLogger(__name__)
+
+ProgressCallback = Callable[[str, int, int], None]
+
+
+class DetectionPipeline:
+    """Orchestrates the sequential execution of all pipeline stages.
+
+    Manages data flow between modules, handles early termination on
+    failures, and ensures the analysis_summarizer receives the History
+    object regardless of pipeline outcome.
+    """
+
+    STAGE_NAMES = [
+        "file_ingestion",
+        "syntax_parser",
+        "netlist_synthesizer",
+        "netlist_graph_builder",
+        "trojan_classifier",
+        "analysis_summarizer",
+    ]
+
+    def __init__(self, progress_callback: ProgressCallback | None = None) -> None:
+        self._progress_callback = progress_callback
+
+    def _report_progress(self, stage: str, current: int, total: int) -> None:
+        if self._progress_callback:
+            self._progress_callback(stage, current, total)
+
+    def run(
+        self,
+        input_path: Path,
+        output_dir: Path | None = None,
+        export_formats: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Execute the full detection pipeline on a single file or directory.
+
+        Args:
+            input_path: Path to a Verilog file or directory of files.
+            output_dir: Directory for report output. Defaults to current directory.
+            export_formats: List of export formats (json, pdf, text). Defaults to ["json"].
+
+        Returns:
+            Dictionary containing the analysis report and export paths.
+        """
+        from trojan_detector.backend.analysis_summarizer.summarizer import AnalysisSummarizer
+        from trojan_detector.backend.file_ingestion.collector import FileCollector
+        from trojan_detector.backend.netlist_graph_builder.builder import NetlistGraphBuilder
+        from trojan_detector.backend.netlist_synthesizer.synthesizer import NetlistSynthesizer
+        from trojan_detector.backend.syntax_parser.parser import SyntaxParser
+        from trojan_detector.backend.trojan_classifier.classifier import TrojanClassifier
+
+        if export_formats is None:
+            export_formats = ["json"]
+        if output_dir is None:
+            output_dir = Path(".")
+
+        history = History()
+        total_stages = len(self.STAGE_NAMES)
+
+        # Stage 1: File Ingestion
+        self._report_progress("file_ingestion", 1, total_stages)
+        collector = FileCollector(history)
+        ingestion_outcome = collector.process(input_path)
+        if not ingestion_outcome.success:
+            history.end_stage("file_ingestion", status="failed")
+            return self._finalize(history, output_dir, export_formats)
+
+        # Stage 2: Syntax Parsing
+        self._report_progress("syntax_parser", 2, total_stages)
+        parser = SyntaxParser(history)
+        parse_outcome = parser.process(ingestion_outcome.data)
+        if not parse_outcome.success:
+            return self._finalize(history, output_dir, export_formats)
+
+        # Stage 3: Netlist Synthesis
+        self._report_progress("netlist_synthesizer", 3, total_stages)
+        synthesizer = NetlistSynthesizer(history)
+        synth_outcome = synthesizer.process(parse_outcome.data)
+        if not synth_outcome.success:
+            return self._finalize(history, output_dir, export_formats)
+
+        # Stage 4: Graph Building
+        self._report_progress("netlist_graph_builder", 4, total_stages)
+        graph_builder = NetlistGraphBuilder(history)
+        graph_outcome = graph_builder.process(synth_outcome.data)
+        if not graph_outcome.success:
+            return self._finalize(history, output_dir, export_formats)
+
+        # Stage 5: Trojan Classification
+        self._report_progress("trojan_classifier", 5, total_stages)
+        classifier = TrojanClassifier(history)
+        classify_outcome = classifier.process(graph_outcome.data)
+        if not classify_outcome.success:
+            return self._finalize(history, output_dir, export_formats)
+
+        # Stage 6: Analysis Summary
+        self._report_progress("analysis_summarizer", 6, total_stages)
+        return self._finalize(history, output_dir, export_formats)
+
+    def _finalize(
+        self,
+        history: History,
+        output_dir: Path,
+        export_formats: list[str],
+    ) -> dict[str, Any]:
+        """Run the analysis summarizer and return results."""
+        from trojan_detector.backend.analysis_summarizer.summarizer import AnalysisSummarizer
+
+        summarizer = AnalysisSummarizer(history)
+        report = summarizer.compile()
+        export_paths = summarizer.export(report, output_dir, export_formats)
+
+        return {
+            "report": report.to_dict(),
+            "export_paths": [str(p) for p in export_paths],
+            "history": history.to_dict(),
+        }
+
+    def run_batch(
+        self,
+        input_path: Path,
+        output_dir: Path | None = None,
+        export_formats: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Execute the pipeline on all files in a directory.
+
+        Args:
+            input_path: Directory containing Verilog files.
+            output_dir: Directory for report output.
+            export_formats: List of export formats.
+
+        Returns:
+            List of result dictionaries, one per processed file.
+        """
+        from trojan_detector.backend.file_ingestion.collector import FileCollector
+
+        if not input_path.is_dir():
+            return [self.run(input_path, output_dir, export_formats)]
+
+        history = History()
+        collector = FileCollector(history)
+        manifest_outcome = collector.process(input_path)
+
+        if not manifest_outcome.success or manifest_outcome.data is None:
+            return [{"error": manifest_outcome.error_message}]
+
+        results = []
+        manifest = manifest_outcome.data
+        for file_entry in manifest.files:
+            result = self.run(file_entry.path, output_dir, export_formats)
+            results.append(result)
+
+        return results
