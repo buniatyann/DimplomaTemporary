@@ -99,9 +99,13 @@ class DetectionPipeline:
             return self._finalize(history, output_dir, export_formats)
 
         # Stage 5: Trojan Classification
+        # Pass parsed modules for source location resolution
         self._report_progress("trojan_classifier", 5, total_stages)
         classifier = TrojanClassifier(history)
-        classify_outcome = classifier.process(graph_outcome.data)
+        classify_outcome = classifier.process(
+            graph_outcome.data,
+            parsed_modules=parse_outcome.data,
+        )
         if not classify_outcome.success:
             return self._finalize(history, output_dir, export_formats)
 
