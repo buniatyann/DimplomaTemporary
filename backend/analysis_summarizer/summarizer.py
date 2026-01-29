@@ -185,7 +185,7 @@ class AnalysisSummarizer:
         }
 
     def _extract_classification_results(self) -> dict[str, Any]:
-        """Extract classification data from History."""
+        """Extract classification data from History including trojan locations."""
         return {
             "verdict": self._history.get_record("trojan_classifier", "verdict"),
             "confidence": self._history.get_record("trojan_classifier", "confidence"),
@@ -200,6 +200,17 @@ class AnalysisSummarizer:
             "device": self._history.get_record("trojan_classifier", "device"),
             "top_suspicious_gates": self._history.get_record(
                 "trojan_classifier", "top_suspicious_gates", []
+            ),
+            # Extended trojan localization fields
+            "trojan_node_percentage": self._history.get_record(
+                "trojan_classifier", "trojan_node_percentage", 0.0
+            ),
+            "high_risk": self._history.get_record("trojan_classifier", "high_risk", False),
+            "trojan_modules": self._history.get_record(
+                "trojan_classifier", "trojan_modules", []
+            ),
+            "trojan_locations_by_module": self._history.get_record(
+                "trojan_classifier", "trojan_locations_by_module", {}
             ),
         }
 
@@ -223,6 +234,12 @@ class AnalysisSummarizer:
             ),
         ]
 
+        # Add trojan locations section if high risk or infected
+        cr = report.classification_results
+        if cr.get("high_risk") or cr.get("verdict") == "infected":
+            trojan_section = self._build_trojan_locations_section(cr)
+            sections.append(trojan_section)
+
         if report.warnings:
             sections.append(
                 ReportSection(
@@ -239,3 +256,44 @@ class AnalysisSummarizer:
             )
 
         return sections
+
+    def _build_trojan_locations_section(
+        self, classification_results: dict[str, Any]
+    ) -> ReportSection:
+        """Build a detailed trojan locations section for the report."""
+        content: dict[str, Any] = {
+            "high_risk_alert": classification_results.get("high_risk", False),
+            "trojan_node_percentage": classification_results.get("trojan_node_percentage", 0.0),
+            "affected_modules": classification_results.get("trojan_modules", []),
+        }
+
+        # Format top suspicious gates with file:line locations
+        top_gates = classification_results.get("top_suspicious_gates", [])
+        formatted_locations = []
+        for gate in top_gates:
+            location_str = ""
+            if gate.get("file") and gate.get("line"):
+                location_str = f"{gate['file']}:{gate['line']}"
+            elif gate.get("file"):
+                location_str = gate["file"]
+            elif gate.get("module"):
+                location_str = f"module:{gate['module']}"
+
+            formatted_locations.append({
+                "gate_name": gate.get("gate", "unknown"),
+                "gate_type": gate.get("type", "unknown"),
+                "module": gate.get("module", "unknown"),
+                "suspicion_score": gate.get("score", 0.0),
+                "location": location_str,
+            })
+
+        content["suspicious_locations"] = formatted_locations
+
+        # Organize by module for structured view
+        by_module = classification_results.get("trojan_locations_by_module", {})
+        content["locations_by_module"] = by_module
+
+        return ReportSection(
+            title="Trojan Locations",
+            content=content,
+        )
