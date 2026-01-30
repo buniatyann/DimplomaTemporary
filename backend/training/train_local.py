@@ -10,6 +10,8 @@ Features:
     - Graph data augmentation (node drop, edge perturb, feature mask, subgraph)
     - Full GPU acceleration with mixed-precision (AMP)
     - Comprehensive sklearn metrics
+    - Train / validation / test splits via sklearn train_test_split (60/20/20)
+    - Matplotlib training history plots (loss, accuracy, F1, LR)
 
 Usage:
     python -m backend.training.train_local --architecture gcn
@@ -31,6 +33,9 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
+import matplotlib
+matplotlib.use("Agg")  # non-interactive backend for headless environments
+import matplotlib.pyplot as plt
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -40,7 +45,8 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from torch.cuda.amp import GradScaler, autocast
+from sklearn.model_selection import train_test_split
+from torch.amp import GradScaler, autocast
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 
@@ -67,6 +73,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--oversample", action="store_true", default=True, help="Oversample minority class")
     p.add_argument("--no-oversample", dest="oversample", action="store_false")
     p.add_argument("--data-dir", type=Path, default=None, help="Data directory override")
+    p.add_argument("--plot-dir", type=Path, default=None, help="Directory to save training plots (default: backend/training/plots)")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("-v", "--verbose", action="count", default=0)
     return p.parse_args()
@@ -214,19 +221,29 @@ def create_graph_from_verilog(file_path: Path, is_trojan_file: bool) -> Data | N
 
     graph_label = torch.tensor([1 if is_trojan_file else 0], dtype=torch.long)
 
-    return Data(
+    data = Data(
         x=x, edge_index=edge_index, y=graph_label,
         node_labels=node_labels, num_nodes=num_nodes,
-        file_path=str(file_path), node_names=nodes,
     )
+    # Store metadata as plain Python attrs (not in PyG's _store)
+    data._file_path = str(file_path)
+    data._node_names = nodes
+    return data
 
 
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
 
-def load_benchmark_files(data_dir: Path | None = None) -> tuple[list[Data], list[Data]]:
-    """Load benchmarks from both trusthub and trusthub_large directories."""
+def load_benchmark_files(
+    data_dir: Path | None = None,
+    seed: int = 42,
+) -> tuple[list[Data], list[Data], list[Data]]:
+    """Load benchmarks and split into train / val / test (60/20/20).
+
+    Uses sklearn.model_selection.train_test_split with stratification on the
+    graph label so that each split preserves the trojan/clean ratio.
+    """
     base = Path(__file__).parent / "data"
 
     search_dirs: list[Path] = []
@@ -262,18 +279,31 @@ def load_benchmark_files(data_dir: Path | None = None) -> tuple[list[Data], list
                 if g is not None:
                     all_graphs.append(g)
 
-    random.shuffle(all_graphs)
-    split = max(1, int(len(all_graphs) * 0.8))
-    train_graphs = all_graphs[:split]
-    val_graphs = all_graphs[split:]
-
-    logger.info(f"Total graphs: {len(all_graphs)} (train={len(train_graphs)}, val={len(val_graphs)})")
-
     n_trojan = sum(1 for g in all_graphs if g.y.item() == 1)
     n_clean = len(all_graphs) - n_trojan
-    logger.info(f"Class distribution: {n_trojan} trojan, {n_clean} clean")
+    logger.info(f"Total graphs: {len(all_graphs)} — {n_trojan} trojan, {n_clean} clean")
 
-    return train_graphs, val_graphs
+    # --- stratified train / val / test split (60 / 20 / 20) ---
+    labels = [int(g.y.item()) for g in all_graphs]
+
+    # First split: 80% train+val, 20% test
+    trainval, test_graphs, trainval_labels, _ = train_test_split(
+        all_graphs, labels, test_size=0.20, random_state=seed, stratify=labels,
+    )
+    # Second split: from 80% take 75% train, 25% val -> overall 60/20/20
+    train_graphs, val_graphs, _, _ = train_test_split(
+        trainval, trainval_labels, test_size=0.25, random_state=seed, stratify=trainval_labels,
+    )
+
+    def _dist(gs: list[Data]) -> str:
+        t = sum(1 for g in gs if g.y.item() == 1)
+        return f"{len(gs)} ({t} trojan, {len(gs)-t} clean)"
+
+    logger.info(f"  Train : {_dist(train_graphs)}")
+    logger.info(f"  Val   : {_dist(val_graphs)}")
+    logger.info(f"  Test  : {_dist(test_graphs)}")
+
+    return train_graphs, val_graphs, test_graphs
 
 
 # ---------------------------------------------------------------------------
@@ -604,6 +634,100 @@ def compute_metrics(y_true: list, y_pred: list, y_proba: list | None = None, pre
 
 
 # ---------------------------------------------------------------------------
+# Plotting
+# ---------------------------------------------------------------------------
+
+def plot_training_history(history: list[dict], architecture: str, plot_dir: Path) -> None:
+    """Save matplotlib figures of training history."""
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    epochs = [r["epoch"] for r in history]
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle(f"Training History — {architecture.upper()}", fontsize=15, fontweight="bold")
+
+    # --- 1. Loss ---
+    ax = axes[0, 0]
+    ax.plot(epochs, [r["train_loss"] for r in history], label="Train Loss", linewidth=1.5)
+    ax.plot(epochs, [r["val_loss"] for r in history], label="Val Loss", linewidth=1.5)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.set_title("Loss")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    # --- 2. Accuracy ---
+    ax = axes[0, 1]
+    ax.plot(epochs, [r["train_accuracy"] for r in history], label="Train Acc", linewidth=1.5)
+    ax.plot(epochs, [r["val_accuracy"] for r in history], label="Val Acc", linewidth=1.5)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Accuracy")
+    ax.set_title("Accuracy")
+    ax.set_ylim(-0.05, 1.05)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    # --- 3. F1 Score ---
+    ax = axes[1, 0]
+    ax.plot(epochs, [r["train_f1"] for r in history], label="Train F1", linewidth=1.5)
+    ax.plot(epochs, [r["val_f1"] for r in history], label="Val F1", linewidth=1.5)
+    if history[0].get("train_node_f1") is not None:
+        ax.plot(epochs, [r.get("train_node_f1", 0) for r in history], label="Train Node F1", linestyle="--", linewidth=1)
+        ax.plot(epochs, [r.get("val_node_f1", 0) for r in history], label="Val Node F1", linestyle="--", linewidth=1)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("F1 Score")
+    ax.set_title("F1 Score (graph & node level)")
+    ax.set_ylim(-0.05, 1.05)
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+
+    # --- 4. Learning Rate ---
+    ax = axes[1, 1]
+    ax.plot(epochs, [r["lr"] for r in history], color="tab:green", linewidth=1.5)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Learning Rate")
+    ax.set_title("Learning Rate Schedule")
+    ax.set_yscale("log")
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    path = plot_dir / f"{architecture}_training_history.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved training history plot: {path}")
+
+
+def plot_test_confusion_matrix(cm: np.ndarray, architecture: str, plot_dir: Path) -> None:
+    """Save a confusion matrix heatmap for the test set."""
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(5, 4))
+    im = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
+    ax.figure.colorbar(im, ax=ax)
+
+    classes = ["Clean", "Trojan"]
+    ax.set(
+        xticks=[0, 1], yticks=[0, 1],
+        xticklabels=classes, yticklabels=classes,
+        xlabel="Predicted", ylabel="True",
+        title=f"Test Confusion Matrix — {architecture.upper()}",
+    )
+
+    thresh = cm.max() / 2.0
+    for i in range(2):
+        for j in range(2):
+            ax.text(j, i, format(cm[i, j], "d"),
+                    ha="center", va="center",
+                    color="white" if cm[i, j] > thresh else "black",
+                    fontsize=16, fontweight="bold")
+
+    plt.tight_layout()
+    path = plot_dir / f"{architecture}_test_confusion_matrix.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved test confusion matrix: {path}")
+
+
+# ---------------------------------------------------------------------------
 # Early stopping
 # ---------------------------------------------------------------------------
 
@@ -635,6 +759,7 @@ def train_model(
     model: torch.nn.Module,
     train_loader: DataLoader,
     val_loader: DataLoader,
+    test_loader: DataLoader,
     epochs: int,
     lr: float,
     weight_decay: float,
@@ -651,7 +776,7 @@ def train_model(
 
     # ---- mixed-precision scaler for GPU ----
     use_amp = device.type == "cuda"
-    scaler = GradScaler(enabled=use_amp)
+    scaler = GradScaler(device=device.type, enabled=use_amp)
 
     # ---- early stopping ----
     stopper = EarlyStopping(patience=patience)
@@ -709,7 +834,7 @@ def train_model(
             batch = batch.to(device)
             optimizer.zero_grad(set_to_none=True)
 
-            with autocast(enabled=use_amp):
+            with autocast(device_type=device.type, enabled=use_amp):
                 graph_logits, node_logits = model(batch.x, batch.edge_index, batch.batch)
 
                 g_loss = F.cross_entropy(graph_logits, batch.y, weight=graph_weight)
@@ -754,7 +879,7 @@ def train_model(
         with torch.no_grad():
             for batch in val_loader:
                 batch = batch.to(device)
-                with autocast(enabled=use_amp):
+                with autocast(device_type=device.type, enabled=use_amp):
                     gl, nl = model(batch.x, batch.edge_index, batch.batch)
                     g_loss = F.cross_entropy(gl, batch.y, weight=graph_weight)
                     if hasattr(batch, "node_labels"):
@@ -831,6 +956,32 @@ def train_model(
     if best_state is not None:
         model.load_state_dict(best_state)
 
+    # ===== TEST SET EVALUATION =====
+    model.eval()
+    test_labels_all: list[int] = []
+    test_preds_all: list[int] = []
+    test_probs_all: list[float] = []
+    test_nlabels_all: list[int] = []
+    test_npreds_all: list[int] = []
+
+    with torch.no_grad():
+        for batch in test_loader:
+            batch = batch.to(device)
+            with autocast(device_type=device.type, enabled=use_amp):
+                gl, nl = model(batch.x, batch.edge_index, batch.batch)
+
+            probs = F.softmax(gl, dim=1)[:, 1]
+            test_labels_all.extend(batch.y.cpu().numpy())
+            test_preds_all.extend(gl.argmax(1).cpu().numpy())
+            test_probs_all.extend(probs.cpu().numpy())
+
+            if hasattr(batch, "node_labels"):
+                test_nlabels_all.extend(batch.node_labels.cpu().numpy())
+                test_npreds_all.extend(nl.argmax(1).cpu().numpy())
+
+    test_m = compute_metrics(test_labels_all, test_preds_all, test_probs_all, "test_")
+    test_node_m = compute_metrics(test_nlabels_all, test_npreds_all, prefix="test_node_") if test_nlabels_all else {}
+
     return {
         "history": history,
         "best_val_loss": best_val_loss,
@@ -839,6 +990,8 @@ def train_model(
         "final_val_metrics": val_m,
         "final_train_node_metrics": tn_m,
         "final_val_node_metrics": vn_m,
+        "test_metrics": test_m,
+        "test_node_metrics": test_node_m,
     }
 
 
@@ -874,9 +1027,9 @@ def main() -> int:
     else:
         logger.info("WARNING: Training on CPU — this will be slow!")
 
-    # ---- data ----
+    # ---- data (train / val / test split via sklearn) ----
     try:
-        train_graphs, val_graphs = load_benchmark_files(args.data_dir)
+        train_graphs, val_graphs, test_graphs = load_benchmark_files(args.data_dir, seed=args.seed)
     except FileNotFoundError as e:
         logger.error(str(e))
         return 1
@@ -904,6 +1057,7 @@ def main() -> int:
     num_workers = 0  # PyG Data objects don't serialise well across workers
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, pin_memory=pin, num_workers=num_workers)
     val_loader = DataLoader(val_graphs, batch_size=args.batch_size, shuffle=False, pin_memory=pin, num_workers=num_workers)
+    test_loader = DataLoader(test_graphs, batch_size=args.batch_size, shuffle=False, pin_memory=pin, num_workers=num_workers)
 
     # ---- model ----
     input_dim = train_graphs[0].x.shape[1]
@@ -923,6 +1077,7 @@ def main() -> int:
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
+        test_loader=test_loader,
         epochs=args.epochs,
         lr=args.lr,
         weight_decay=args.weight_decay,
@@ -936,7 +1091,7 @@ def main() -> int:
     logger.info("=" * 70)
 
     fv = result["final_val_metrics"]
-    logger.info("Graph-Level Metrics:")
+    logger.info("Validation — Graph-Level:")
     logger.info(f"  Best Val Loss : {result['best_val_loss']:.4f}")
     logger.info(f"  Best Val F1   : {result['best_val_f1']:.4f}")
     logger.info(f"  Accuracy      : {fv['val_accuracy']:.4f}")
@@ -952,13 +1107,42 @@ def main() -> int:
 
     fn = result["final_val_node_metrics"]
     if fn:
-        logger.info("Node-Level Metrics:")
+        logger.info("Validation — Node-Level:")
         logger.info(f"  Accuracy  : {fn.get('val_node_accuracy', 0):.4f}")
         logger.info(f"  Precision : {fn.get('val_node_precision', 0):.4f}")
         logger.info(f"  Recall    : {fn.get('val_node_recall', 0):.4f}")
         logger.info(f"  F1        : {fn.get('val_node_f1', 0):.4f}")
 
+    # ---- test set results ----
+    tm = result["test_metrics"]
+    logger.info("-" * 40)
+    logger.info("TEST SET — Graph-Level:")
+    logger.info(f"  Accuracy  : {tm['test_accuracy']:.4f}")
+    logger.info(f"  Precision : {tm['test_precision']:.4f}")
+    logger.info(f"  Recall    : {tm['test_recall']:.4f}")
+    logger.info(f"  F1        : {tm['test_f1']:.4f}")
+    if "test_roc_auc" in tm:
+        logger.info(f"  ROC-AUC   : {tm['test_roc_auc']:.4f}")
+
+    tcm = tm["test_confusion_matrix"]
+    logger.info(f"  Confusion: TN={tcm[0,0]}  FP={tcm[0,1]}")
+    logger.info(f"             FN={tcm[1,0]}  TP={tcm[1,1]}")
+
+    tnm = result["test_node_metrics"]
+    if tnm:
+        logger.info("TEST SET — Node-Level:")
+        logger.info(f"  Accuracy  : {tnm.get('test_node_accuracy', 0):.4f}")
+        logger.info(f"  Precision : {tnm.get('test_node_precision', 0):.4f}")
+        logger.info(f"  Recall    : {tnm.get('test_node_recall', 0):.4f}")
+        logger.info(f"  F1        : {tnm.get('test_node_f1', 0):.4f}")
+
     logger.info(f"\nWeights: backend/trojan_classifier/weights/{args.architecture}_weights.pt")
+
+    # ---- matplotlib plots ----
+    plot_dir = args.plot_dir or (Path(__file__).parent / "plots")
+    plot_training_history(result["history"], args.architecture, plot_dir)
+    plot_test_confusion_matrix(tcm, args.architecture, plot_dir)
+
     logger.info("=" * 70)
 
     return 0
