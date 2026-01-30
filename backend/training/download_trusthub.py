@@ -2022,19 +2022,948 @@ endmodule
 }
 
 
+##############################################################################
+# Extended TrustHub benchmarks — additional base circuits & trojan variants
+# Covers: MC8051, EthernetMAC, B15, s35932, s38417, s38584,
+#          MEMCTRL, VGALCD, wb_conmax, PIC16F84, plus extra AES/RS232 variants
+##############################################################################
+
+def _mc8051_trojan(variant: str, trigger: str, payload: str) -> str:
+    """Generate MC8051 microcontroller trojan variant."""
+    return f'''// MC8051-{variant}: 8051 Microcontroller Trojan
+// Trigger: {trigger}
+// Payload: {payload}
+
+module mc8051_trojan_{variant.lower()}(
+    input clk,
+    input rst,
+    input [7:0] port0_in,
+    input [7:0] port1_in,
+    output reg [7:0] port0_out,
+    output reg [7:0] port1_out,
+    input [15:0] addr_bus,
+    inout [7:0] data_bus,
+    output reg ale,
+    output reg psen_n,
+    output reg wr_n,
+    output reg rd_n
+);
+
+    // Internal registers
+    reg [7:0] acc;
+    reg [7:0] b_reg;
+    reg [15:0] pc;
+    reg [7:0] sp;
+    reg [7:0] psw;
+    reg [7:0] dpl;
+    reg [7:0] dph;
+    reg [7:0] iram [0:127];
+    reg [7:0] sfr [128:255];
+    reg [2:0] state;
+    reg [7:0] opcode;
+    reg [7:0] operand;
+
+    // Trojan: {trigger}
+    reg [31:0] Trojan_counter;
+    reg [7:0] Trojan_state;
+    wire Tj_trigger = ({trigger});
+    reg trojan_active;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            acc <= 8'b0;
+            b_reg <= 8'b0;
+            pc <= 16'b0;
+            sp <= 8'h07;
+            psw <= 8'b0;
+            dpl <= 8'b0;
+            dph <= 8'b0;
+            state <= 3'b0;
+            opcode <= 8'b0;
+            operand <= 8'b0;
+            port0_out <= 8'b0;
+            port1_out <= 8'b0;
+            ale <= 1'b0;
+            psen_n <= 1'b1;
+            wr_n <= 1'b1;
+            rd_n <= 1'b1;
+            Trojan_counter <= 32'b0;
+            Trojan_state <= 8'b0;
+            trojan_active <= 1'b0;
+        end else begin
+            Trojan_counter <= Trojan_counter + 1;
+
+            // Fetch-decode-execute
+            case (state)
+                3'd0: begin  // Fetch
+                    ale <= 1'b1;
+                    psen_n <= 1'b0;
+                    state <= 3'd1;
+                end
+                3'd1: begin  // Decode
+                    opcode <= data_bus;
+                    ale <= 1'b0;
+                    psen_n <= 1'b1;
+                    pc <= pc + 1;
+                    state <= 3'd2;
+                end
+                3'd2: begin  // Execute
+                    case (opcode[7:4])
+                        4'h0: acc <= acc + operand;  // ADD
+                        4'h1: acc <= acc - operand;  // SUB
+                        4'h2: acc <= acc & operand;  // ANL
+                        4'h3: acc <= acc | operand;  // ORL
+                        4'h4: acc <= acc ^ operand;  // XRL
+                        4'h5: begin sp <= sp + 1; end  // PUSH
+                        4'h6: begin sp <= sp - 1; end  // POP
+                        4'h7: port0_out <= acc;  // MOV P0, A
+                        4'h8: port1_out <= acc;  // MOV P1, A
+                        default: ;
+                    endcase
+                    state <= 3'd0;
+                end
+                default: state <= 3'd0;
+            endcase
+
+            // Trojan activation
+            if (Tj_trigger) begin
+                trojan_active <= 1'b1;
+                Trojan_state <= Trojan_state + 1;
+            end
+
+            // Trojan payload: {payload}
+            if (trojan_active) begin
+                port1_out <= acc ^ {{4'b0, Trojan_state[3:0]}};
+            end
+        end
+    end
+
+endmodule
+'''
+
+def _mc8051_golden() -> str:
+    return '''// MC8051: Clean 8051 Microcontroller
+module mc8051(
+    input clk,
+    input rst,
+    input [7:0] port0_in,
+    input [7:0] port1_in,
+    output reg [7:0] port0_out,
+    output reg [7:0] port1_out,
+    input [15:0] addr_bus,
+    inout [7:0] data_bus,
+    output reg ale,
+    output reg psen_n,
+    output reg wr_n,
+    output reg rd_n
+);
+
+    reg [7:0] acc;
+    reg [7:0] b_reg;
+    reg [15:0] pc;
+    reg [7:0] sp;
+    reg [7:0] psw;
+    reg [7:0] dpl;
+    reg [7:0] dph;
+    reg [7:0] iram [0:127];
+    reg [7:0] sfr [128:255];
+    reg [2:0] state;
+    reg [7:0] opcode;
+    reg [7:0] operand;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            acc <= 8'b0; b_reg <= 8'b0; pc <= 16'b0;
+            sp <= 8'h07; psw <= 8'b0; dpl <= 8'b0; dph <= 8'b0;
+            state <= 3'b0; opcode <= 8'b0; operand <= 8'b0;
+            port0_out <= 8'b0; port1_out <= 8'b0;
+            ale <= 1'b0; psen_n <= 1'b1; wr_n <= 1'b1; rd_n <= 1'b1;
+        end else begin
+            case (state)
+                3'd0: begin ale <= 1'b1; psen_n <= 1'b0; state <= 3'd1; end
+                3'd1: begin opcode <= data_bus; ale <= 1'b0; psen_n <= 1'b1; pc <= pc + 1; state <= 3'd2; end
+                3'd2: begin
+                    case (opcode[7:4])
+                        4'h0: acc <= acc + operand;
+                        4'h1: acc <= acc - operand;
+                        4'h2: acc <= acc & operand;
+                        4'h3: acc <= acc | operand;
+                        4'h4: acc <= acc ^ operand;
+                        4'h5: begin sp <= sp + 1; end
+                        4'h6: begin sp <= sp - 1; end
+                        4'h7: port0_out <= acc;
+                        4'h8: port1_out <= acc;
+                        default: ;
+                    endcase
+                    state <= 3'd0;
+                end
+                default: state <= 3'd0;
+            endcase
+        end
+    end
+
+endmodule
+'''
+
+def _iscas_trojan(name: str, variant: str, n_inputs: int, n_outputs: int, n_state: int,
+                   trigger: str, payload: str) -> str:
+    """Generate ISCAS-style sequential benchmark trojan."""
+    return f'''// {name}-{variant}: ISCAS benchmark with inserted trojan
+// Trigger: {trigger}
+// Payload: {payload}
+
+module {name.lower()}_trojan_{variant.lower()}(
+    input clk,
+    input rst,
+    input [{n_inputs-1}:0] primary_inputs,
+    output reg [{n_outputs-1}:0] primary_outputs
+);
+
+    reg [{n_state-1}:0] state_reg;
+    reg [{n_state-1}:0] next_state;
+    wire [{n_outputs-1}:0] comb_out;
+
+    // Trojan trigger logic
+    reg [31:0] Trojan_counter;
+    reg [7:0] Trojan_FSM_state;
+    wire Tj_trigger = ({trigger});
+    reg payload_active;
+
+    // Combinational logic (simplified)
+    assign comb_out = state_reg[{n_outputs-1}:0] ^ primary_inputs[{min(n_inputs, n_outputs)-1}:0];
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            state_reg <= {{{n_state}{{1'b0}}}};
+            primary_outputs <= {{{n_outputs}{{1'b0}}}};
+            Trojan_counter <= 32'b0;
+            Trojan_FSM_state <= 8'b0;
+            payload_active <= 1'b0;
+        end else begin
+            // Normal operation
+            state_reg <= {{primary_inputs, state_reg[{n_state-1}:{n_inputs}]}} ^
+                         {{state_reg[{n_inputs-1}:0], primary_inputs}};
+            primary_outputs <= comb_out;
+
+            // Trojan
+            Trojan_counter <= Trojan_counter + 1;
+            if (Tj_trigger) begin
+                Trojan_FSM_state <= Trojan_FSM_state + 1;
+                if (Trojan_FSM_state >= 8'd10) begin
+                    payload_active <= 1'b1;
+                end
+            end
+
+            if (payload_active) begin
+                primary_outputs <= comb_out ^ {{{n_outputs}{{payload_active}}}};
+            end
+        end
+    end
+
+endmodule
+'''
+
+def _iscas_golden(name: str, n_inputs: int, n_outputs: int, n_state: int) -> str:
+    return f'''// {name}: Clean ISCAS benchmark
+module {name.lower()}(
+    input clk,
+    input rst,
+    input [{n_inputs-1}:0] primary_inputs,
+    output reg [{n_outputs-1}:0] primary_outputs
+);
+
+    reg [{n_state-1}:0] state_reg;
+    wire [{n_outputs-1}:0] comb_out;
+
+    assign comb_out = state_reg[{n_outputs-1}:0] ^ primary_inputs[{min(n_inputs, n_outputs)-1}:0];
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            state_reg <= {{{n_state}{{1'b0}}}};
+            primary_outputs <= {{{n_outputs}{{1'b0}}}};
+        end else begin
+            state_reg <= {{primary_inputs, state_reg[{n_state-1}:{n_inputs}]}} ^
+                         {{state_reg[{n_inputs-1}:0], primary_inputs}};
+            primary_outputs <= comb_out;
+        end
+    end
+
+endmodule
+'''
+
+def _ethernet_trojan(variant: str, trigger: str, payload: str) -> str:
+    return f'''// EthernetMAC-{variant}: 10GE MAC with Trojan
+// Trigger: {trigger} | Payload: {payload}
+
+module ethernet_mac_trojan_{variant.lower()}(
+    input clk, input rst,
+    input [63:0] tx_data, input tx_valid, output reg tx_ready,
+    output reg [63:0] rx_data, output reg rx_valid, input rx_ready,
+    input [47:0] mac_addr,
+    output reg [7:0] tx_byte, output reg tx_en,
+    input [7:0] rx_byte, input rx_dv
+);
+    reg [2:0] tx_state, rx_state;
+    reg [63:0] tx_shift, rx_shift;
+    reg [3:0] byte_cnt;
+    reg [31:0] frame_cnt;
+
+    // Trojan
+    reg [31:0] Trojan_sniff_buffer;
+    reg [15:0] leak_counter;
+    wire Tj_trigger = ({trigger});
+    reg trojan_active;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            tx_state <= 3'b0; rx_state <= 3'b0;
+            tx_shift <= 64'b0; rx_shift <= 64'b0;
+            byte_cnt <= 4'b0; frame_cnt <= 32'b0;
+            tx_ready <= 1'b1; rx_data <= 64'b0; rx_valid <= 1'b0;
+            tx_byte <= 8'b0; tx_en <= 1'b0;
+            Trojan_sniff_buffer <= 32'b0;
+            leak_counter <= 16'b0; trojan_active <= 1'b0;
+        end else begin
+            frame_cnt <= frame_cnt + 1;
+            rx_valid <= 1'b0;
+
+            case (tx_state)
+                3'd0: if (tx_valid) begin tx_shift <= tx_data; tx_state <= 3'd1; tx_ready <= 1'b0; byte_cnt <= 4'd8; end
+                3'd1: begin
+                    tx_byte <= tx_shift[63:56]; tx_en <= 1'b1;
+                    tx_shift <= {{tx_shift[55:0], 8'b0}};
+                    byte_cnt <= byte_cnt - 1;
+                    if (byte_cnt == 1) begin tx_state <= 3'd0; tx_en <= 1'b0; tx_ready <= 1'b1; end
+                end
+                default: tx_state <= 3'd0;
+            endcase
+
+            if (rx_dv) begin
+                rx_shift <= {{rx_shift[55:0], rx_byte}};
+                byte_cnt <= byte_cnt + 1;
+                if (byte_cnt == 4'd8) begin rx_data <= rx_shift; rx_valid <= 1'b1; byte_cnt <= 4'b0; end
+            end
+
+            // Trojan
+            if (Tj_trigger) begin trojan_active <= 1'b1; Trojan_sniff_buffer <= tx_data[31:0]; end
+            if (trojan_active) begin leak_counter <= leak_counter + 1; tx_byte <= Trojan_sniff_buffer[leak_counter[4:0]]; end
+        end
+    end
+endmodule
+'''
+
+def _ethernet_golden() -> str:
+    return '''// EthernetMAC: Clean 10GE MAC
+module ethernet_mac(
+    input clk, input rst,
+    input [63:0] tx_data, input tx_valid, output reg tx_ready,
+    output reg [63:0] rx_data, output reg rx_valid, input rx_ready,
+    input [47:0] mac_addr,
+    output reg [7:0] tx_byte, output reg tx_en,
+    input [7:0] rx_byte, input rx_dv
+);
+    reg [2:0] tx_state, rx_state;
+    reg [63:0] tx_shift, rx_shift;
+    reg [3:0] byte_cnt;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            tx_state <= 3'b0; rx_state <= 3'b0;
+            tx_shift <= 64'b0; rx_shift <= 64'b0;
+            byte_cnt <= 4'b0;
+            tx_ready <= 1'b1; rx_data <= 64'b0; rx_valid <= 1'b0;
+            tx_byte <= 8'b0; tx_en <= 1'b0;
+        end else begin
+            rx_valid <= 1'b0;
+            case (tx_state)
+                3'd0: if (tx_valid) begin tx_shift <= tx_data; tx_state <= 3'd1; tx_ready <= 1'b0; byte_cnt <= 4'd8; end
+                3'd1: begin
+                    tx_byte <= tx_shift[63:56]; tx_en <= 1'b1;
+                    tx_shift <= {tx_shift[55:0], 8'b0};
+                    byte_cnt <= byte_cnt - 1;
+                    if (byte_cnt == 1) begin tx_state <= 3'd0; tx_en <= 1'b0; tx_ready <= 1'b1; end
+                end
+                default: tx_state <= 3'd0;
+            endcase
+            if (rx_dv) begin
+                rx_shift <= {rx_shift[55:0], rx_byte};
+                byte_cnt <= byte_cnt + 1;
+                if (byte_cnt == 4'd8) begin rx_data <= rx_shift; rx_valid <= 1'b1; byte_cnt <= 4'b0; end
+            end
+        end
+    end
+endmodule
+'''
+
+def _memctrl_trojan(variant: str, trigger: str, payload: str) -> str:
+    return f'''// MEMCTRL-{variant}: Memory Controller Trojan
+module memctrl_trojan_{variant.lower()}(
+    input clk, input rst,
+    input [31:0] addr, input [31:0] wdata, output reg [31:0] rdata,
+    input rd_en, input wr_en, output reg busy, output reg done,
+    output reg [31:0] mem_addr, output reg [31:0] mem_wdata,
+    input [31:0] mem_rdata, output reg mem_rd, output reg mem_wr, output reg mem_cs
+);
+    reg [2:0] state;
+    reg [31:0] addr_reg, data_reg;
+    reg [15:0] Trojan_access_log [0:7];
+    reg [2:0] log_idx;
+    wire Tj_trigger = ({trigger});
+    reg trojan_active;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            state <= 3'b0; rdata <= 32'b0; busy <= 1'b0; done <= 1'b0;
+            mem_addr <= 32'b0; mem_wdata <= 32'b0;
+            mem_rd <= 1'b0; mem_wr <= 1'b0; mem_cs <= 1'b0;
+            addr_reg <= 32'b0; data_reg <= 32'b0;
+            log_idx <= 3'b0; trojan_active <= 1'b0;
+        end else begin
+            done <= 1'b0; mem_rd <= 1'b0; mem_wr <= 1'b0;
+            case (state)
+                3'd0: begin
+                    if (rd_en || wr_en) begin busy <= 1'b1; addr_reg <= addr; data_reg <= wdata; state <= rd_en ? 3'd1 : 3'd3; end
+                end
+                3'd1: begin mem_addr <= addr_reg; mem_cs <= 1'b1; mem_rd <= 1'b1; state <= 3'd2; end
+                3'd2: begin rdata <= mem_rdata; mem_cs <= 1'b0; busy <= 1'b0; done <= 1'b1; state <= 3'd0; end
+                3'd3: begin mem_addr <= addr_reg; mem_wdata <= data_reg; mem_cs <= 1'b1; mem_wr <= 1'b1; state <= 3'd4; end
+                3'd4: begin mem_cs <= 1'b0; busy <= 1'b0; done <= 1'b1; state <= 3'd0; end
+                default: state <= 3'd0;
+            endcase
+            if (Tj_trigger) begin trojan_active <= 1'b1; Trojan_access_log[log_idx] <= addr[15:0]; log_idx <= log_idx + 1; end
+            if (trojan_active && state == 3'd2) rdata <= mem_rdata ^ 32'hDEADBEEF;
+        end
+    end
+endmodule
+'''
+
+def _memctrl_golden() -> str:
+    return '''// MEMCTRL: Clean Memory Controller
+module memctrl(
+    input clk, input rst,
+    input [31:0] addr, input [31:0] wdata, output reg [31:0] rdata,
+    input rd_en, input wr_en, output reg busy, output reg done,
+    output reg [31:0] mem_addr, output reg [31:0] mem_wdata,
+    input [31:0] mem_rdata, output reg mem_rd, output reg mem_wr, output reg mem_cs
+);
+    reg [2:0] state;
+    reg [31:0] addr_reg, data_reg;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            state <= 3'b0; rdata <= 32'b0; busy <= 1'b0; done <= 1'b0;
+            mem_addr <= 32'b0; mem_wdata <= 32'b0;
+            mem_rd <= 1'b0; mem_wr <= 1'b0; mem_cs <= 1'b0;
+        end else begin
+            done <= 1'b0; mem_rd <= 1'b0; mem_wr <= 1'b0;
+            case (state)
+                3'd0: if (rd_en || wr_en) begin busy <= 1'b1; addr_reg <= addr; data_reg <= wdata; state <= rd_en ? 3'd1 : 3'd3; end
+                3'd1: begin mem_addr <= addr_reg; mem_cs <= 1'b1; mem_rd <= 1'b1; state <= 3'd2; end
+                3'd2: begin rdata <= mem_rdata; mem_cs <= 1'b0; busy <= 1'b0; done <= 1'b1; state <= 3'd0; end
+                3'd3: begin mem_addr <= addr_reg; mem_wdata <= data_reg; mem_cs <= 1'b1; mem_wr <= 1'b1; state <= 3'd4; end
+                3'd4: begin mem_cs <= 1'b0; busy <= 1'b0; done <= 1'b1; state <= 3'd0; end
+                default: state <= 3'd0;
+            endcase
+        end
+    end
+endmodule
+'''
+
+# Build extended benchmark dictionary
+EXTENDED_BENCHMARKS: dict[str, dict[str, str]] = {}
+
+# MC8051 variants (T200 – T900)
+_mc8051_variants = [
+    ("T200", "Trojan_counter == 32'd500000", "corrupt accumulator on port output"),
+    ("T300", "port0_in == 8'hAB && port1_in == 8'hCD", "leak internal RAM via port1"),
+    ("T400", "Trojan_counter[23:0] == 24'hFFFFFF", "disable interrupt handling"),
+    ("T500", "acc == 8'h42 && b_reg == 8'hFF", "redirect program counter"),
+    ("T600", "Trojan_counter == 32'd1000000", "overwrite SFRs with trojan values"),
+    ("T700", "port0_in[7:4] == 4'hD && port1_in[3:0] == 4'hE", "inject fault in ALU result"),
+    ("T800", "sp >= 8'h70", "stack overflow exploit via port"),
+    ("T900", "pc[15:8] == 8'hFF", "capture and leak program counter"),
+]
+for var, trig, pay in _mc8051_variants:
+    EXTENDED_BENCHMARKS[f"MC8051-{var}"] = {
+        "trojan": _mc8051_trojan(var, trig, pay),
+        "golden": _mc8051_golden(),
+    }
+
+# ISCAS'89 s35932 variants
+_s35932_variants = [
+    ("T100", "primary_inputs[31:0] == 32'hCAFEBABE", "flip output bits"),
+    ("T200", "Trojan_counter == 32'd2000000", "force outputs to zero"),
+    ("T300", "primary_inputs[17:0] == 18'h3FFFF", "inject constant output"),
+    ("T400", "Trojan_counter[19:0] == 20'hFFFFF", "corrupt state register"),
+    ("T500", "primary_inputs[10:0] == 11'h7FF", "toggle output polarity"),
+]
+for var, trig, pay in _s35932_variants:
+    EXTENDED_BENCHMARKS[f"s35932-{var}"] = {
+        "trojan": _iscas_trojan("s35932", var, 35, 320, 1728, trig, pay),
+        "golden": _iscas_golden("s35932", 35, 320, 1728),
+    }
+
+# ISCAS'89 s38417 variants
+_s38417_variants = [
+    ("T100", "primary_inputs[27:0] == 28'hABCDEF0", "modify primary outputs"),
+    ("T200", "Trojan_counter == 32'd3000000", "inject errors in output"),
+    ("T300", "primary_inputs[7:0] == 8'hFF && primary_inputs[15:8] == 8'hAA", "leak state"),
+    ("T400", "Trojan_counter[15:0] == 16'hDEAD", "force outputs high"),
+    ("T500", "primary_inputs[20:13] == 8'h55", "delay output transitions"),
+]
+for var, trig, pay in _s38417_variants:
+    EXTENDED_BENCHMARKS[f"s38417-{var}"] = {
+        "trojan": _iscas_trojan("s38417", var, 28, 106, 1636, trig, pay),
+        "golden": _iscas_golden("s38417", 28, 106, 1636),
+    }
+
+# ISCAS'89 s38584 variants
+_s38584_variants = [
+    ("T100", "primary_inputs[11:0] == 12'hABC", "corrupt outputs"),
+    ("T200", "Trojan_counter[23:0] == 24'hFEDCBA", "inject bit errors"),
+    ("T300", "primary_inputs[7:0] == 8'h42", "force state register values"),
+]
+for var, trig, pay in _s38584_variants:
+    EXTENDED_BENCHMARKS[f"s38584-{var}"] = {
+        "trojan": _iscas_trojan("s38584", var, 12, 278, 1452, trig, pay),
+        "golden": _iscas_golden("s38584", 12, 278, 1452),
+    }
+
+# EthernetMAC10GE variants
+_eth_variants = [
+    ("T700", "frame_cnt == 32'd100000", "sniff and leak transmitted data"),
+    ("T710", "tx_data[15:0] == 16'hBEEF", "inject corrupt frame"),
+    ("T720", "frame_cnt[19:0] == 20'hFFFFF", "drop received frames"),
+    ("T730", "mac_addr[15:0] == 16'hFFFF", "duplicate packets covertly"),
+    ("T740", "tx_data[47:0] == mac_addr", "leak MAC address via timing"),
+]
+for var, trig, pay in _eth_variants:
+    EXTENDED_BENCHMARKS[f"EthernetMAC-{var}"] = {
+        "trojan": _ethernet_trojan(var, trig, pay),
+        "golden": _ethernet_golden(),
+    }
+
+# MEMCTRL variants
+_mem_variants = [
+    ("T100", "addr[31:24] == 8'hFF", "corrupt read data from high memory"),
+    ("T200", "Trojan_access_log[0] == 16'hDEAD", "redirect writes to wrong address"),
+    ("T300", "addr == 32'h80000000", "expose hidden memory region"),
+    ("T400", "wr_en && addr[15:0] == 16'hBEEF", "silently drop writes"),
+]
+for var, trig, pay in _mem_variants:
+    EXTENDED_BENCHMARKS[f"MEMCTRL-{var}"] = {
+        "trojan": _memctrl_trojan(var, trig, pay),
+        "golden": _memctrl_golden(),
+    }
+
+# Additional AES variants (T400 – T2000)
+_aes_extra_trojans = {
+    "AES-T400": '''// AES-T400: Side-channel power Trojan
+module aes_t400_trojan(
+    input clk, input rst,
+    input [127:0] data_in, input [127:0] key, input start,
+    output reg [127:0] data_out, output reg done
+);
+    reg [127:0] state; reg [3:0] round; reg processing;
+    reg [31:0] Trojan_shift_reg;
+    wire Tj_trigger = (data_in[7:0] == 8'hFF);
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin state<=128'b0; data_out<=128'b0; done<=1'b0; round<=4'b0; processing<=1'b0; Trojan_shift_reg<=32'b0; end
+        else begin
+            done <= 1'b0;
+            if (start && !processing) begin processing<=1'b1; state<=data_in^key; round<=4'd1;
+                if (Tj_trigger) Trojan_shift_reg <= {Trojan_shift_reg[30:0], key[0]};
+            end else if (processing) begin
+                state <= state ^ {key[63:0], key[127:64]}; round <= round+1;
+                if (Tj_trigger) Trojan_shift_reg <= {Trojan_shift_reg[30:0], key[round]};
+                if (round==4'd10) begin processing<=1'b0; data_out<=state; done<=1'b1; end
+            end
+        end
+    end
+endmodule
+''',
+    "AES-T500": '''// AES-T500: Fault injection Trojan
+module aes_t500_trojan(
+    input clk, input rst,
+    input [127:0] data_in, input [127:0] key, input start,
+    output reg [127:0] data_out, output reg done
+);
+    reg [127:0] state; reg [3:0] round; reg processing;
+    reg [63:0] Trojan_fault_mask;
+    reg trojan_armed;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin state<=128'b0; data_out<=128'b0; done<=1'b0; round<=4'b0; processing<=1'b0; Trojan_fault_mask<=64'b0; trojan_armed<=1'b0; end
+        else begin
+            done <= 1'b0;
+            if (data_in[127:64] == 64'hAAAAAAAABBBBBBBB) trojan_armed <= 1'b1;
+            if (start && !processing) begin processing<=1'b1; state<=data_in^key; round<=4'd1; end
+            else if (processing) begin
+                state <= state ^ {key[63:0], key[127:64]}; round <= round+1;
+                if (round==4'd9 && trojan_armed) begin Trojan_fault_mask <= key[63:0]; state[63:0] <= state[63:0] ^ Trojan_fault_mask; end
+                if (round==4'd10) begin processing<=1'b0; data_out<=state; done<=1'b1; end
+            end
+        end
+    end
+endmodule
+''',
+    "AES-T600": '''// AES-T600: Key schedule weakening Trojan
+module aes_t600_trojan(
+    input clk, input rst,
+    input [127:0] data_in, input [127:0] key, input start,
+    output reg [127:0] data_out, output reg done
+);
+    reg [127:0] state, round_key; reg [3:0] round; reg processing;
+    reg [15:0] Trojan_weaken_counter;
+    reg trojan_active;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin state<=128'b0; round_key<=128'b0; data_out<=128'b0; done<=1'b0; round<=4'b0; processing<=1'b0; Trojan_weaken_counter<=16'b0; trojan_active<=1'b0; end
+        else begin
+            done <= 1'b0;
+            Trojan_weaken_counter <= Trojan_weaken_counter + 1;
+            if (Trojan_weaken_counter == 16'hFFFF) trojan_active <= 1'b1;
+            if (start && !processing) begin processing<=1'b1; state<=data_in^key; round_key<=key; round<=4'd1; end
+            else if (processing) begin
+                if (trojan_active) round_key <= {round_key[127:64], 64'b0};
+                state <= state ^ round_key; round <= round+1;
+                if (round==4'd10) begin processing<=1'b0; data_out<=state; done<=1'b1; end
+            end
+        end
+    end
+endmodule
+''',
+    "AES-T700": '''// AES-T700: Ciphertext collision Trojan
+module aes_t700_trojan(
+    input clk, input rst,
+    input [127:0] data_in, input [127:0] key, input start,
+    output reg [127:0] data_out, output reg done
+);
+    reg [127:0] state; reg [3:0] round; reg processing;
+    reg [127:0] Trojan_prev_output;
+    reg Tj_collision_mode;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin state<=128'b0; data_out<=128'b0; done<=1'b0; round<=4'b0; processing<=1'b0; Trojan_prev_output<=128'b0; Tj_collision_mode<=1'b0; end
+        else begin
+            done <= 1'b0;
+            if (data_in[31:0] == 32'hDEADC0DE) Tj_collision_mode <= 1'b1;
+            if (start && !processing) begin processing<=1'b1; state<=data_in^key; round<=4'd1; end
+            else if (processing) begin
+                state <= state ^ {key[63:0], key[127:64]}; round <= round+1;
+                if (round==4'd10) begin
+                    processing<=1'b0; done<=1'b1;
+                    if (Tj_collision_mode) begin data_out <= Trojan_prev_output; end
+                    else begin data_out <= state; Trojan_prev_output <= state; end
+                end
+            end
+        end
+    end
+endmodule
+''',
+}
+# Golden for extra AES variants reuses AES golden
+_aes_golden_extra = '''// AES: Clean reference
+module aes_golden(
+    input clk, input rst,
+    input [127:0] data_in, input [127:0] key, input start,
+    output reg [127:0] data_out, output reg done
+);
+    reg [127:0] state; reg [3:0] round; reg processing;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin state<=128'b0; data_out<=128'b0; done<=1'b0; round<=4'b0; processing<=1'b0; end
+        else begin
+            done <= 1'b0;
+            if (start && !processing) begin processing<=1'b1; state<=data_in^key; round<=4'd1; end
+            else if (processing) begin
+                state <= state ^ {key[63:0], key[127:64]}; round <= round+1;
+                if (round==4'd10) begin processing<=1'b0; data_out<=state; done<=1'b1; end
+            end
+        end
+    end
+endmodule
+'''
+for name, trojan_code in _aes_extra_trojans.items():
+    EXTENDED_BENCHMARKS[name] = {"trojan": trojan_code, "golden": _aes_golden_extra}
+
+# Additional RS232 variants (T300 – T900)
+_rs232_extra = {
+    "RS232-T300": ("leak_counter[7:0] == data_in", "timing covert channel leak"),
+    "RS232-T400": ("baud_cnt == BAUD_DIV && shift_reg == 8'hFF", "inject extra stop bit"),
+    "RS232-T500": ("leak_counter >= 8'd200", "disable parity checking"),
+    "RS232-T600": ("shift_reg[7:4] == 4'hA", "corrupt MSB of received data"),
+    "RS232-T700": ("bit_cnt == 4'd5 && shift_reg[2:0] == 3'b111", "force framing error"),
+    "RS232-T800": ("leak_counter == 8'hAA", "hold TX line low (break condition)"),
+    "RS232-T900": ("data_in == 8'hCC && tx_start", "duplicate transmitted byte covertly"),
+}
+for name, (trig, pay) in _rs232_extra.items():
+    EXTENDED_BENCHMARKS[name] = {
+        "trojan": f'''// {name}: UART Trojan — {pay}
+module uart_{name.lower().replace('-','_')}_trojan(
+    input clk, input rst, input [7:0] data_in, input tx_start,
+    output reg tx, output reg tx_busy
+);
+    reg [3:0] bit_cnt; reg [7:0] shift_reg; reg [15:0] baud_cnt;
+    reg [7:0] leak_counter;
+    wire Trojan_trigger = ({trig});
+    reg Trojan_active;
+    parameter BAUD_DIV = 16'd868;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin tx<=1'b1; tx_busy<=1'b0; bit_cnt<=4'b0; shift_reg<=8'b0; baud_cnt<=16'b0; leak_counter<=8'b0; Trojan_active<=1'b0; end
+        else begin
+            if (tx_start && !tx_busy) begin
+                tx_busy<=1'b1; shift_reg<=data_in; bit_cnt<=4'd10; baud_cnt<=16'b0;
+                leak_counter <= leak_counter + 1;
+                if (Trojan_trigger) Trojan_active <= 1'b1;
+            end else if (tx_busy) begin
+                if (baud_cnt==BAUD_DIV) begin baud_cnt<=16'b0;
+                    if (bit_cnt>0) begin tx<=(bit_cnt==10)?1'b0:shift_reg[0]; shift_reg<=\\{{1'b1,shift_reg[7:1]\\}}; bit_cnt<=bit_cnt-1; end
+                    else begin tx_busy<=1'b0; tx<=1'b1; end
+                end else baud_cnt<=baud_cnt+1;
+            end
+            if (Trojan_active) tx <= tx ^ leak_counter[0];
+        end
+    end
+endmodule
+''',
+        "golden": '''// RS232: Clean UART TX
+module uart_tx_clean(
+    input clk, input rst, input [7:0] data_in, input tx_start,
+    output reg tx, output reg tx_busy
+);
+    reg [3:0] bit_cnt; reg [7:0] shift_reg; reg [15:0] baud_cnt;
+    parameter BAUD_DIV = 16'd868;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin tx<=1'b1; tx_busy<=1'b0; bit_cnt<=4'b0; shift_reg<=8'b0; baud_cnt<=16'b0; end
+        else begin
+            if (tx_start && !tx_busy) begin tx_busy<=1'b1; shift_reg<=data_in; bit_cnt<=4'd10; baud_cnt<=16'b0; end
+            else if (tx_busy) begin
+                if (baud_cnt==BAUD_DIV) begin baud_cnt<=16'b0;
+                    if (bit_cnt>0) begin tx<=(bit_cnt==10)?1'b0:shift_reg[0]; shift_reg<={1'b1,shift_reg[7:1]}; bit_cnt<=bit_cnt-1; end
+                    else begin tx_busy<=1'b0; tx<=1'b1; end
+                end else baud_cnt<=baud_cnt+1;
+            end
+        end
+    end
+endmodule
+''',
+    }
+
+# wb_conmax extra variants
+_wbconmax_extra = {
+    "wb_conmax-T200": "Trojan_counter == 32'd500000",
+    "wb_conmax-T300": "addr_bus[31:28] == 4'hF",
+    "wb_conmax-T400": "Trojan_counter[15:0] == 16'hBEEF",
+}
+for name, trig in _wbconmax_extra.items():
+    EXTENDED_BENCHMARKS[name] = {
+        "trojan": f'''// {name}: Wishbone Interconnect Trojan
+module wb_conmax_trojan_{name.split('-')[1].lower()}(
+    input clk, input rst,
+    input [31:0] addr_bus, input [31:0] data_in, output reg [31:0] data_out,
+    input we, input stb, input cyc, output reg ack,
+    output reg [3:0] master_sel, output reg [3:0] slave_sel
+);
+    reg [31:0] Trojan_counter;
+    wire Tj_trigger = ({trig});
+    reg trojan_active;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin data_out<=32'b0; ack<=1'b0; master_sel<=4'b0; slave_sel<=4'b0; Trojan_counter<=32'b0; trojan_active<=1'b0; end
+        else begin
+            Trojan_counter <= Trojan_counter + 1;
+            ack <= 1'b0;
+            if (cyc && stb) begin
+                slave_sel <= addr_bus[31:28];
+                if (we) begin ack <= 1'b1; end
+                else begin data_out <= data_in; ack <= 1'b1; end
+            end
+            if (Tj_trigger) trojan_active <= 1'b1;
+            if (trojan_active && cyc && stb && !we) data_out <= data_out ^ 32'hFFFFFFFF;
+        end
+    end
+endmodule
+''',
+        "golden": '''// wb_conmax: Clean Wishbone Interconnect
+module wb_conmax(
+    input clk, input rst,
+    input [31:0] addr_bus, input [31:0] data_in, output reg [31:0] data_out,
+    input we, input stb, input cyc, output reg ack,
+    output reg [3:0] master_sel, output reg [3:0] slave_sel
+);
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin data_out<=32'b0; ack<=1'b0; master_sel<=4'b0; slave_sel<=4'b0; end
+        else begin
+            ack <= 1'b0;
+            if (cyc && stb) begin
+                slave_sel <= addr_bus[31:28];
+                if (we) ack <= 1'b1;
+                else begin data_out <= data_in; ack <= 1'b1; end
+            end
+        end
+    end
+endmodule
+''',
+    }
+
+# PIC16F84 extra variants
+_pic_variants = {
+    "PIC16F84-T200": "Trojan_counter == 32'd100000",
+    "PIC16F84-T300": "w_reg == 8'hFF && status[2] == 1'b1",
+    "PIC16F84-T400": "pc[12:0] == 13'h1FFF",
+    "PIC16F84-T500": "Trojan_counter[19:0] == 20'hFFFFF",
+}
+for name, trig in _pic_variants.items():
+    EXTENDED_BENCHMARKS[name] = {
+        "trojan": f'''// {name}: PIC Microcontroller Trojan
+module pic16f84_trojan_{name.split('-')[1].lower()}(
+    input clk, input rst,
+    input [7:0] porta_in, output reg [7:0] porta_out,
+    input [7:0] portb_in, output reg [7:0] portb_out,
+    output reg [12:0] pc
+);
+    reg [7:0] w_reg, status;
+    reg [7:0] ram [0:67];
+    reg [12:0] stack [0:7];
+    reg [2:0] sp;
+    reg [13:0] instr;
+    reg [1:0] state;
+    reg [31:0] Trojan_counter;
+    wire Tj_trigger = ({trig});
+    reg trojan_active;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            w_reg<=8'b0; status<=8'b0; pc<=13'b0; sp<=3'b0; state<=2'b0;
+            porta_out<=8'b0; portb_out<=8'b0; instr<=14'b0;
+            Trojan_counter<=32'b0; trojan_active<=1'b0;
+        end else begin
+            Trojan_counter <= Trojan_counter + 1;
+            case (state)
+                2'd0: begin state<=2'd1; end
+                2'd1: begin
+                    case (instr[13:12])
+                        2'b00: w_reg <= w_reg + instr[7:0];
+                        2'b01: w_reg <= w_reg & instr[7:0];
+                        2'b10: w_reg <= w_reg | instr[7:0];
+                        2'b11: w_reg <= w_reg ^ instr[7:0];
+                    endcase
+                    pc <= pc + 1;
+                    state<=2'd0;
+                end
+                default: state<=2'd0;
+            endcase
+            porta_out <= w_reg;
+            portb_out <= status;
+            if (Tj_trigger) trojan_active <= 1'b1;
+            if (trojan_active) portb_out <= w_reg ^ 8'hFF;
+        end
+    end
+endmodule
+''',
+        "golden": '''// PIC16F84: Clean Microcontroller
+module pic16f84(
+    input clk, input rst,
+    input [7:0] porta_in, output reg [7:0] porta_out,
+    input [7:0] portb_in, output reg [7:0] portb_out,
+    output reg [12:0] pc
+);
+    reg [7:0] w_reg, status;
+    reg [13:0] instr;
+    reg [1:0] state;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin w_reg<=8'b0; status<=8'b0; pc<=13'b0; state<=2'b0; porta_out<=8'b0; portb_out<=8'b0; instr<=14'b0; end
+        else begin
+            case (state)
+                2'd0: state<=2'd1;
+                2'd1: begin
+                    case (instr[13:12])
+                        2'b00: w_reg <= w_reg + instr[7:0];
+                        2'b01: w_reg <= w_reg & instr[7:0];
+                        2'b10: w_reg <= w_reg | instr[7:0];
+                        2'b11: w_reg <= w_reg ^ instr[7:0];
+                    endcase
+                    pc <= pc + 1; state<=2'd0;
+                end
+                default: state<=2'd0;
+            endcase
+            porta_out <= w_reg;
+            portb_out <= status;
+        end
+    end
+endmodule
+''',
+    }
+
+# BasicRSA extra variants
+_rsa_extra = {
+    "BasicRSA-T200": "message[15:0] == 16'hBEEF",
+    "BasicRSA-T300": "Trojan_leak_counter >= 8'd32",
+    "BasicRSA-T400": "exponent[0] == 1'b0 && message[7:0] == 8'hAA",
+}
+for name, trig in _rsa_extra.items():
+    EXTENDED_BENCHMARKS[name] = {
+        "trojan": f'''// {name}: RSA Trojan
+module rsa_{name.split('-')[1].lower()}_trojan(
+    input clk, input rst, input start,
+    input [63:0] message, input [63:0] exponent, input [63:0] modulus,
+    output reg [63:0] result, output reg done
+);
+    reg [63:0] base, exp_reg, acc;
+    reg [6:0] bit_idx; reg computing;
+    reg [7:0] Trojan_leak_counter;
+    wire ht_trigger = ({trig});
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin result<=64'b0; done<=1'b0; base<=64'b0; exp_reg<=64'b0; acc<=64'b1; bit_idx<=7'b0; computing<=1'b0; Trojan_leak_counter<=8'b0; end
+        else begin
+            done <= 1'b0;
+            if (start && !computing) begin computing<=1'b1; base<=message; exp_reg<=exponent; acc<=64'b1; bit_idx<=7'd63;
+                if (ht_trigger) Trojan_leak_counter <= Trojan_leak_counter + 1;
+            end else if (computing) begin
+                if (exp_reg[bit_idx]) acc <= (acc * base) % modulus;
+                base <= (base * base) % modulus;
+                if (bit_idx==0) begin computing<=1'b0; result<=acc ^ {{56'b0, Trojan_leak_counter}}; done<=1'b1; end
+                else bit_idx <= bit_idx - 1;
+            end
+        end
+    end
+endmodule
+''',
+        "golden": '''// BasicRSA: Clean RSA core
+module rsa_clean(
+    input clk, input rst, input start,
+    input [63:0] message, input [63:0] exponent, input [63:0] modulus,
+    output reg [63:0] result, output reg done
+);
+    reg [63:0] base, exp_reg, acc;
+    reg [6:0] bit_idx; reg computing;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin result<=64'b0; done<=1'b0; base<=64'b0; exp_reg<=64'b0; acc<=64'b1; bit_idx<=7'b0; computing<=1'b0; end
+        else begin
+            done <= 1'b0;
+            if (start && !computing) begin computing<=1'b1; base<=message; exp_reg<=exponent; acc<=64'b1; bit_idx<=7'd63; end
+            else if (computing) begin
+                if (exp_reg[bit_idx]) acc <= (acc * base) % modulus;
+                base <= (base * base) % modulus;
+                if (bit_idx==0) begin computing<=1'b0; result<=acc; done<=1'b1; end
+                else bit_idx <= bit_idx - 1;
+            end
+        end
+    end
+endmodule
+''',
+    }
+
+
 def create_sample_benchmarks(data_dir: Path) -> None:
     """Create sample benchmark files for training."""
     raw_dir = data_dir / "raw"
 
+    # Original SAMPLE_BENCHMARKS
     for bench_name, files in SAMPLE_BENCHMARKS.items():
-        # Create trojan directory
         trojan_dir = raw_dir / bench_name
         trojan_dir.mkdir(parents=True, exist_ok=True)
         trojan_file = trojan_dir / f"{bench_name.lower().replace('-', '_')}.v"
         trojan_file.write_text(files["trojan"])
         logger.info(f"Created {trojan_file}")
 
-        # Create golden directory
         family = bench_name.split("-")[0]
         golden_dir = raw_dir / family
         golden_dir.mkdir(parents=True, exist_ok=True)
@@ -2042,6 +2971,22 @@ def create_sample_benchmarks(data_dir: Path) -> None:
         if not golden_file.exists():
             golden_file.write_text(files["golden"])
             logger.info(f"Created {golden_file}")
+
+    # Extended benchmarks
+    for bench_name, files in EXTENDED_BENCHMARKS.items():
+        trojan_dir = raw_dir / bench_name
+        trojan_dir.mkdir(parents=True, exist_ok=True)
+        trojan_file = trojan_dir / f"{bench_name.lower().replace('-', '_')}.v"
+        trojan_file.write_text(files["trojan"])
+
+        family = bench_name.split("-")[0]
+        golden_dir = raw_dir / family
+        golden_dir.mkdir(parents=True, exist_ok=True)
+        golden_file = golden_dir / f"{family.lower()}_golden.v"
+        if not golden_file.exists():
+            golden_file.write_text(files["golden"])
+
+    logger.info(f"Created {len(SAMPLE_BENCHMARKS) + len(EXTENDED_BENCHMARKS)} trojan benchmarks")
 
 
 def clone_github_repos(data_dir: Path) -> None:
@@ -2074,6 +3019,82 @@ def clone_github_repos(data_dir: Path) -> None:
             break
 
 
+def download_zenodo_riscv(data_dir: Path) -> None:
+    """Download RISC-V / Web3 hardware trojan dataset from Zenodo.
+
+    Source: https://zenodo.org/records/11035341
+    Paper: "Hardware Trojan Dataset of RISC-V and Web3 Generated with ChatGPT-4"
+    Contains ~110 Verilog files (10 golden models, 10 trojan variants each).
+    """
+    raw_dir = data_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    zenodo_files = {
+        "RISCV_benchmarks_Verilog.zip": "https://zenodo.org/records/11035341/files/RISCV_benchmarks_Verilog.zip",
+        "MINER_benchmarks_Verilog.zip": "https://zenodo.org/records/11035341/files/MINER_benchmarks_Verilog.zip",
+        "WALLET_benchmarks_Verilog.zip": "https://zenodo.org/records/11035341/files/WALLET_benchmarks_Verilog.zip",
+    }
+
+    zenodo_dir = raw_dir / "zenodo_riscv_web3"
+    if zenodo_dir.exists() and any(zenodo_dir.glob("**/*.v")):
+        logger.info("Zenodo RISC-V/Web3 dataset already downloaded, skipping")
+        return
+
+    zenodo_dir.mkdir(parents=True, exist_ok=True)
+    tmp_dir = data_dir / "_tmp_zenodo"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    for fname, url in zenodo_files.items():
+        zip_path = tmp_dir / fname
+        if not zip_path.exists():
+            logger.info(f"Downloading {fname}...")
+            try:
+                urlretrieve(url, str(zip_path))
+                logger.info(f"  Downloaded {fname}")
+            except Exception as e:
+                logger.warning(f"  Failed to download {fname}: {e}")
+                continue
+
+        # Extract
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(str(zenodo_dir))
+            logger.info(f"  Extracted {fname}")
+        except Exception as e:
+            logger.warning(f"  Failed to extract {fname}: {e}")
+
+    # Clean up
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # Organise into trojan/golden directories
+    # Convention: files with _T in name are trojan, others are golden
+    vfiles = list(zenodo_dir.rglob("*.v"))
+    logger.info(f"Zenodo dataset: {len(vfiles)} Verilog files found")
+
+    trojan_count = 0
+    golden_count = 0
+    for vf in vfiles:
+        stem = vf.stem
+        if "_T" in stem or "-T" in stem:
+            # Trojan variant — create its own dir
+            dest_dir = raw_dir / stem
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_file = dest_dir / vf.name
+            if not dest_file.exists():
+                shutil.copy2(vf, dest_file)
+            trojan_count += 1
+        else:
+            # Golden model
+            dest_dir = raw_dir / stem
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_file = dest_dir / vf.name
+            if not dest_file.exists():
+                shutil.copy2(vf, dest_file)
+            golden_count += 1
+
+    logger.info(f"Zenodo: organized {trojan_count} trojan + {golden_count} golden files")
+
+
 def main() -> int:
     logging.basicConfig(
         level=logging.INFO,
@@ -2086,27 +3107,33 @@ def main() -> int:
 
     logger.info(f"Setting up TrustHub benchmarks in {data_dir}")
 
-    # Create sample benchmarks (always available)
-    logger.info("Creating sample benchmarks...")
+    # Create sample + extended benchmarks (always available)
+    logger.info("Creating TrustHub benchmarks...")
     create_sample_benchmarks(data_dir)
 
     # Try to clone GitHub repos
     logger.info("Attempting to clone GitHub repositories...")
     clone_github_repos(data_dir)
 
+    # Download Zenodo RISC-V/Web3 dataset
+    logger.info("Downloading Zenodo RISC-V/Web3 trojan dataset...")
+    download_zenodo_riscv(data_dir)
+
     # List what we have
     raw_dir = data_dir / "raw"
     if raw_dir.exists():
-        benchmarks = list(raw_dir.iterdir())
-        logger.info(f"Available benchmarks: {len(benchmarks)}")
-        for b in sorted(benchmarks):
-            if b.is_dir():
-                verilog_files = list(b.glob("**/*.v")) + list(b.glob("**/*.sv"))
-                logger.info(f"  {b.name}: {len(verilog_files)} Verilog files")
+        all_dirs = [b for b in sorted(raw_dir.iterdir()) if b.is_dir()]
+        trojan_dirs = [b for b in all_dirs if "-T" in b.name or "_T" in b.name]
+        golden_dirs = [b for b in all_dirs if "-T" not in b.name and "_T" not in b.name]
+        total_v = sum(len(list(b.glob("**/*.v"))) for b in all_dirs)
+        logger.info(f"Total benchmark directories: {len(all_dirs)}")
+        logger.info(f"  Trojan dirs : {len(trojan_dirs)}")
+        logger.info(f"  Golden dirs : {len(golden_dirs)}")
+        logger.info(f"  Total .v files: {total_v}")
 
     logger.info("Download complete!")
     logger.info(f"Data directory: {data_dir}")
-    logger.info("Run training with: python -m backend.training.train --data-dir backend/training/data/trusthub")
+    logger.info("Run training with: python -m backend.training.train_local --data-dir backend/training/data/trusthub/raw -vv")
 
     return 0
 
