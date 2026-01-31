@@ -1,0 +1,87 @@
+paths:
+  data_root: "backend/training/data"
+  trusthub_raw: "trusthub/raw"
+  trusthub_processed: "trusthub/processed"
+  trit_raw: "trit/raw"
+  iscas: "iscas"
+  epfl: "epfl"
+  itc99: "itc99"
+  opencores: "opencores"
+  cell_libraries: "cell_libraries"
+
+training:
+  sources:
+    trojan_infected:
+      - name: "trusthub_saed90"
+        path: "trusthub/raw/saed90nm"
+        pattern: "*-T*.v"
+        split_ratio: 0.85
+      - name: "trit_tc_leda250"
+        path: "trit/raw/leda250nm/trit_tc"
+        pattern: "*_trojan_*.v"
+        split_ratio: 1.0
+      - name: "trit_ts_leda250"
+        path: "trit/raw/leda250nm/trit_ts"
+        pattern: "*_trojan_*.v"
+        split_ratio: 1.0
+    clean:
+      - name: "trusthub_golden"
+        path: "trusthub/raw/saed90nm"
+        pattern: "*_golden.v"
+      - name: "trit_golden"
+        path: "trit/raw/leda250nm"
+        pattern: "*_golden.v"
+      - name: "iscas85"
+        path: "iscas/iscas85"
+        pattern: "*.v"
+      - name: "iscas89"
+        path: "iscas/iscas89"
+        pattern: "*.v"
+      - name: "epfl"
+        path: "epfl"
+        pattern: "**/*.v"
+
+validation:
+  split_from_training: 0.15
+  sources:
+    - "trusthub_saed90"
+
+verification:
+  sources:
+    trojan_infected:
+      - name: "trusthub_leda250"
+        path: "trusthub/raw/leda250nm"
+        pattern: "*-T*.v"
+      - name: "trit_skywater130"
+        path: "trit/raw/skywater130nm"
+        pattern: "*_trojan_*.v"
+    clean:
+      - name: "trit_skywater_golden"
+        path: "trit/raw/skywater130nm"
+        pattern: "*_golden.v"
+      - name: "itc99"
+        path: "itc99"
+        pattern: "*.v"
+      - name: "opencores"
+        path: "opencores"
+        pattern: "**/*.v"
+
+cell_libraries:
+  saed90nm:
+    lib_file: "cell_libraries/saed90nm/saed90nm.lib"
+    verilog_file: "cell_libraries/saed90nm/saed90nm.v"
+  leda250nm:
+    lib_file: "cell_libraries/leda250nm/leda250nm.lib"
+    verilog_file: "cell_libraries/leda250nm/leda250nm.v"
+  skywater130nm:
+    lib_file: "cell_libraries/skywater130nm/sky130_fd_sc_hd.lib"
+    verilog_file: "cell_libraries/skywater130nm/sky130_fd_sc_hd.v"
+
+preprocessing:
+  normalize_gate_names: true
+  flatten_hierarchy: true
+  remove_unconnected: true
+
+class_balance:
+  strategy: "oversample_minority"
+  target_ratio: 1.0
