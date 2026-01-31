@@ -235,53 +235,207 @@ def create_graph_from_verilog(file_path: Path, is_trojan_file: bool) -> Data | N
 # Data loading
 # ---------------------------------------------------------------------------
 
+def parse_trit_log(log_path: Path) -> set[str]:
+    """Parse a TRIT log.txt file and return the set of trojan gate instance names."""
+    trojan_gates: set[str] = set()
+    try:
+        content = log_path.read_text(errors="replace")
+    except OSError:
+        return trojan_gates
+
+    in_body = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("TROJAN BODY"):
+            in_body = True
+            continue
+        if in_body:
+            if stripped.startswith("---") or stripped == "":
+                # Could be separator between multiple trojans; keep parsing
+                continue
+            if stripped.startswith("*"):
+                in_body = False
+                continue
+            # Parse gate instantiation: "gate_type instance_name ( ... );"
+            m = re.match(r'\s*\w+\s+(\w+)\s*\(', stripped)
+            if m:
+                trojan_gates.add(m.group(1))
+    return trojan_gates
+
+
+def _load_trit_labels(labels_dir: Path) -> dict[str, set[str]]:
+    """Load all TRIT log files and return {benchmark_name: set_of_trojan_gates}."""
+    labels: dict[str, set[str]] = {}
+    if not labels_dir.exists():
+        return labels
+    for log_file in sorted(labels_dir.glob("*_log.txt")):
+        # Filename: c2670_T000_log.txt -> benchmark = c2670_T000
+        bench_name = log_file.stem.replace("_log", "")
+        gates = parse_trit_log(log_file)
+        if gates:
+            labels[bench_name] = gates
+    return labels
+
+
+def create_graph_with_trit_labels(
+    file_path: Path, is_trojan_file: bool, trojan_gates: set[str] | None = None,
+) -> Data | None:
+    """Build a PyG Data object, using TRIT labels for precise node labeling when available."""
+    try:
+        nodes, edges, node_types = parse_verilog_simple(file_path)
+    except Exception as e:
+        logger.debug(f"Parse error {file_path}: {e}")
+        return None
+
+    if len(nodes) < 3:
+        return None
+
+    num_nodes = len(nodes)
+
+    # --- node features ---
+    x = torch.zeros((num_nodes, FEATURE_DIM), dtype=torch.float)
+
+    fan_in = [0] * num_nodes
+    fan_out = [0] * num_nodes
+    for s, t in edges:
+        fan_out[s] += 1
+        fan_in[t] += 1
+    max_fan = max(max(fan_in, default=1), max(fan_out, default=1), 1)
+
+    for i, (_, ntype) in enumerate(zip(nodes, node_types)):
+        idx = TYPE_TO_IDX.get(ntype, TYPE_TO_IDX["UNKNOWN"])
+        x[i, idx] = 1.0
+        x[i, -4] = fan_in[i] / max_fan
+        x[i, -3] = fan_out[i] / max_fan
+        x[i, -2] = (fan_in[i] + 1) / (fan_out[i] + fan_in[i] + 2)
+        x[i, -1] = 1.0 if ntype == "DFF" else 0.0
+
+    # --- edges ---
+    if edges:
+        edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
+    else:
+        edge_index = torch.stack([
+            torch.arange(num_nodes, dtype=torch.long),
+            torch.arange(num_nodes, dtype=torch.long),
+        ])
+
+    # --- labels ---
+    node_labels = torch.zeros(num_nodes, dtype=torch.long)
+    if is_trojan_file:
+        for i, name in enumerate(nodes):
+            # Use TRIT labels if available, otherwise fall back to name patterns
+            if trojan_gates and name in trojan_gates:
+                node_labels[i] = 1
+            elif is_trojan_name(name):
+                node_labels[i] = 1
+
+    graph_label = torch.tensor([1 if is_trojan_file else 0], dtype=torch.long)
+
+    data = Data(
+        x=x, edge_index=edge_index, y=graph_label,
+        node_labels=node_labels, num_nodes=num_nodes,
+    )
+    data._file_path = str(file_path)
+    data._node_names = nodes
+    return data
+
+
 def load_benchmark_files(
     data_dir: Path | None = None,
     seed: int = 42,
 ) -> tuple[list[Data], list[Data], list[Data]]:
     """Load benchmarks and split into train / val / test (60/20/20).
 
-    Uses sklearn.model_selection.train_test_split with stratification on the
-    graph label so that each split preserves the trojan/clean ratio.
+    Scans the new dataset structure:
+      - trit/raw/leda250nm/trit_tc/{circuit}/*_T*.v  (trojan, combinational)
+      - trit/raw/leda250nm/trit_ts/{circuit}/*_T*.v  (trojan, sequential)
+      - trit/raw/leda250nm/trit_tc/*.v               (golden references)
+      - trit/raw/leda250nm/trit_ts/*.v               (golden references)
+      - iscas/iscas85/*.v                             (clean)
+      - iscas/iscas89/*.v                             (clean)
+      - epfl/arithmetic/*.v                           (clean)
+      - epfl/random_control/*.v                       (clean)
     """
     base = Path(__file__).parent / "data"
 
-    search_dirs: list[Path] = []
     if data_dir is not None:
-        search_dirs.append(data_dir)
-    else:
-        for name in ("trusthub/raw", "trusthub_large/raw"):
-            d = base / name
-            if d.exists():
-                search_dirs.append(d)
-
-    if not search_dirs:
-        raise FileNotFoundError(f"No data directory found under {base}")
+        base = data_dir
 
     all_graphs: list[Data] = []
 
-    for sdir in search_dirs:
-        benchmarks = sorted(sdir.iterdir())
-        trojan_dirs = [b for b in benchmarks if b.is_dir() and ("_T" in b.name or "-T" in b.name)]
-        golden_dirs = [b for b in benchmarks if b.is_dir() and "_T" not in b.name and "-T" not in b.name]
+    # --- Load TRIT labels for precise node-level trojan identification ---
+    trit_labels = _load_trit_labels(base / "trit" / "raw" / "leda250nm" / "labels")
+    logger.info(f"Loaded TRIT labels for {len(trit_labels)} benchmarks")
 
-        logger.info(f"[{sdir.name}] Found {len(trojan_dirs)} trojan, {len(golden_dirs)} golden dirs")
-
-        for td in trojan_dirs:
-            for vf in td.glob("*.v"):
-                g = create_graph_from_verilog(vf, is_trojan_file=True)
+    # --- TRIT trojan files ---
+    trit_trojan_count = 0
+    for trit_set in ("trit_tc", "trit_ts"):
+        trit_dir = base / "trit" / "raw" / "leda250nm" / trit_set
+        if not trit_dir.exists():
+            continue
+        for circuit_dir in sorted(trit_dir.iterdir()):
+            if not circuit_dir.is_dir():
+                continue
+            for vf in sorted(circuit_dir.glob("*_T*.v")):
+                bench_name = vf.stem  # e.g. c2670_T000
+                gates = trit_labels.get(bench_name)
+                g = create_graph_with_trit_labels(vf, is_trojan_file=True, trojan_gates=gates)
                 if g is not None:
                     all_graphs.append(g)
+                    trit_trojan_count += 1
+    logger.info(f"TRIT trojans: {trit_trojan_count} graphs")
 
-        for gd in golden_dirs:
-            for vf in gd.glob("*.v"):
-                g = create_graph_from_verilog(vf, is_trojan_file=False)
-                if g is not None:
-                    all_graphs.append(g)
+    # --- TRIT golden (clean) files ---
+    trit_golden_count = 0
+    for trit_set in ("trit_tc", "trit_ts"):
+        trit_dir = base / "trit" / "raw" / "leda250nm" / trit_set
+        if not trit_dir.exists():
+            continue
+        # Golden files are directly in trit_tc/ and trit_ts/ (not in subdirs)
+        for vf in sorted(trit_dir.glob("*.v")):
+            if "_T" in vf.stem:
+                continue  # skip trojan files
+            g = create_graph_with_trit_labels(vf, is_trojan_file=False)
+            if g is not None:
+                all_graphs.append(g)
+                trit_golden_count += 1
+    logger.info(f"TRIT golden: {trit_golden_count} graphs")
+
+    # --- ISCAS clean circuits ---
+    iscas_count = 0
+    for sub in ("iscas85", "iscas89"):
+        iscas_dir = base / "iscas" / sub
+        if not iscas_dir.exists():
+            continue
+        for vf in sorted(iscas_dir.glob("*.v")):
+            g = create_graph_with_trit_labels(vf, is_trojan_file=False)
+            if g is not None:
+                all_graphs.append(g)
+                iscas_count += 1
+    logger.info(f"ISCAS clean: {iscas_count} graphs")
+
+    # --- EPFL clean circuits ---
+    epfl_count = 0
+    for sub in ("arithmetic", "random_control"):
+        epfl_dir = base / "epfl" / sub
+        if not epfl_dir.exists():
+            continue
+        for vf in sorted(epfl_dir.glob("*.v")):
+            g = create_graph_with_trit_labels(vf, is_trojan_file=False)
+            if g is not None:
+                all_graphs.append(g)
+                epfl_count += 1
+    logger.info(f"EPFL clean: {epfl_count} graphs")
 
     n_trojan = sum(1 for g in all_graphs if g.y.item() == 1)
     n_clean = len(all_graphs) - n_trojan
     logger.info(f"Total graphs: {len(all_graphs)} — {n_trojan} trojan, {n_clean} clean")
+
+    if len(all_graphs) < 4:
+        raise FileNotFoundError(
+            f"Only {len(all_graphs)} graphs found under {base}. "
+            "Need at least 4 for train/val/test split."
+        )
 
     # --- stratified train / val / test split (60 / 20 / 20) ---
     labels = [int(g.y.item()) for g in all_graphs]
