@@ -1,0 +1,38 @@
+s15850_T421 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: counter with 3 states
+
+Effect: The Trojan alters the following signal(s)...
+n1519
+Activation Condition: The Trojan is triggered by the following internal signals...
+g11328 n2223 n2479 n786 n1513 n1380 g11264 n709 n1627 n1769 n913 g4906 n1429 n2169 n1755 n588
+****************************************************************
+TROJAN BODY: 
+  nor2s1 trig64_0U1 ( .DIN1(trig64_0n1), .DIN2(trig64_0n2), .Q(Trigger_en0_0) );
+  nnd4s1 trig64_0U2 ( .DIN1(n588), .DIN2(n2479), .DIN3(trig64_0n3), .DIN4(trig64_0n4), .Q(trig64_0n2) );
+  nor4s1 trig64_0U3 ( .DIN1(n1429), .DIN2(n1380), .DIN3(g11328), .DIN4(g11264), .Q(trig64_0n4)         );
+  and2s1 trig64_0U4 ( .DIN1(n1755), .DIN2(g4906), .Q(trig64_0n3) );
+  nnd2s1 trig64_0U5 ( .DIN1(trig64_0n5), .DIN2(trig64_0n6), .Q(trig64_0n1) );
+  nor4s1 trig64_0U6 ( .DIN1(n913), .DIN2(n786), .DIN3(n709), .DIN4(n2223), .Q(trig64_0n6) );
+  nor4s1 trig64_0U7 ( .DIN1(n2169), .DIN2(n1769), .DIN3(n1627), .DIN4(n1513), .Q(trig64_0n5)         );
+
+
+----------------------------------
+  dffs2 troj21_0counter_reg_0_ ( .DIN(troj21_0n2), .CLK(CK), .Q(troj21_0counter_0_) );
+  dffles2 troj21_0counter_reg_1_ ( .DIN(troj21_0N1), .EB(troj21_0n1), .CLK(CK), .Q(troj21_0counter_1_) );
+  dffcs2 troj21_0Trojan_out0_reg ( .CLRB(troj21_0counter_0_), .DIN(troj21_0counter_1_), .CLK(CK), .Q(        Trojan_out0) );
+  hi1s1 troj21_0U3 ( .DIN(Trigger_en0_0), .Q(troj21_0n1) );
+  xor2s1 troj21_0U4 ( .DIN1(troj21_0counter_0_), .DIN2(Trigger_en0_0), .Q(troj21_0n2) );
+  xor2s1 troj21_0U5 ( .DIN1(troj21_0counter_1_), .DIN2(troj21_0counter_0_), .Q(troj21_0N1) );
+
+    xor2s1 trojan21_0  (.DIN1(tempn1519), .DIN2(Trojan_out0), .Q(n1519) );
+
+----------------------------------

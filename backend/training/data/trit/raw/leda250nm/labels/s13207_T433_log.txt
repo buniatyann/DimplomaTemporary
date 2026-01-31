@@ -1,0 +1,38 @@
+s13207_T433 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: FSM with 1 triggers and state transition:
+      1->2->0
+
+Effect: The Trojan alters the following signal(s)...
+g6316
+Activation Condition: The Trojan is triggered by the following internal signals...
+n932 n1317 g4668 n1033 n1701 n656 n1336
+****************************************************************
+TROJAN BODY: 
+  nor3s1 trig103_0U1 ( .DIN1(trig103_0n1), .DIN2(trig103_0n2), .DIN3(trig103_0n3), .Q(Trigger_en0_0) );
+  nnd2s1 trig103_0U2 ( .DIN1(n656), .DIN2(n1033), .Q(trig103_0n3) );
+  i1s1 trig103_0U3 ( .DIN(n932), .Q(trig103_0n2) );
+  or3s1 trig103_0U4 ( .DIN1(n1701), .DIN2(n1336), .DIN3(trig103_0n4), .Q(trig103_0n1) );
+  nnd2s1 trig103_0U5 ( .DIN1(g4668), .DIN2(trig103_0n5), .Q(trig103_0n4) );
+  i1s1 trig103_0U6 ( .DIN(n1317), .Q(trig103_0n5) );
+
+
+----------------------------------
+  dffles2 troj33_0state_reg_1_ ( .DIN(troj33_01'b0), .EB(troj33_0n5), .CLK(CK), .Q(troj33_0state_1_), .QN(troj33_0n2) );
+  dffles2 troj33_0Trojan_out0_reg ( .DIN(troj33_0n2), .EB(troj33_0n3), .CLK(CK), .Q(Trojan_out0) );
+  ib1s2 troj33_0U5 ( .DIN(troj33_0N15), .Q(troj33_0n5) );
+  nor2s2 troj33_0U6 ( .DIN1(troj33_0n3), .DIN2(troj33_0n4), .Q(troj33_0N15) );
+  ib1s2 troj33_0U8 ( .DIN(Trigger_en0_0), .Q(troj33_0n3) );
+  ib1s2 troj33_0U9 ( .DIN(troj33_0state_1_), .Q(troj33_0n4) );
+
+    xor2s1 trojan33_0  (.DIN1(tempg6316), .DIN2(Trojan_out0), .Q(g6316) );
+
+----------------------------------

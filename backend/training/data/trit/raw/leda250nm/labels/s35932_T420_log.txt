@@ -1,0 +1,43 @@
+s35932_T420 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: FSM with 2 triggers and state transition:
+      1->0
+
+Effect: The Trojan alters the following signal(s)...
+n4186
+Activation Condition: The Trojan is triggered by the following internal signals...
+n3002 n4262 WX1296 n4197 n4708 n2835 n3599 n4418 n2256 n4209 WX6468
+n4618 n2575 WX9044 n3853 n4323 n1998 n3931 n3901 n4283 n2224 n2507 n2151 n4278 n2761
+****************************************************************
+TROJAN BODY: 
+  nor2s1 trig66_0U1 ( .DIN1(trig66_0n1), .DIN2(trig66_0n2), .Q(Trigger_en0_0) );
+  nnd4s1 trig66_0U2 ( .DIN1(n4209), .DIN2(n3002), .DIN3(trig66_0n3), .DIN4(WX6468), .Q(trig66_0n2) );
+  nor2s1 trig66_0U3 ( .DIN1(n2256), .DIN2(trig66_0n4), .Q(trig66_0n3) );
+  i1s1 trig66_0U4 ( .DIN(WX1296), .Q(trig66_0n4) );
+  or5s1 trig66_0U5 ( .DIN1(n4197), .DIN2(n3599), .DIN3(n2835), .DIN4(n4262), .DIN5(trig66_0n5),         .Q(trig66_0n1) );
+  i1s1 trig66_0U6 ( .DIN(trig66_0n6), .Q(trig66_0n5) );
+  nor2s1 trig66_0U7 ( .DIN1(n4708), .DIN2(n4418), .Q(trig66_0n6) );
+
+
+----------------------------------
+  nor5s1 trig67_0U1 ( .DIN1(trig67_0n1), .DIN2(trig67_0n2), .DIN3(n2761), .DIN4(n3901), .DIN5(n3853),         .Q(Trigger_en0_1) );
+  or4s1 trig67_0U2 ( .DIN1(n4283), .DIN2(n4278), .DIN3(n4618), .DIN4(n4323), .Q(trig67_0n2) );
+  or5s1 trig67_0U3 ( .DIN1(n2151), .DIN2(n1998), .DIN3(n2575), .DIN4(n2224), .DIN5(trig67_0n3),         .Q(trig67_0n1) );
+  nnd3s1 trig67_0U4 ( .DIN1(n2507), .DIN2(WX9044), .DIN3(n3931), .Q(trig67_0n3) );
+
+
+----------------------------------
+  dffles2 troj20_0Trojan_out0_reg ( .DIN(troj20_01'b1), .EB(troj20_0n2), .CLK(CK), .Q(Trojan_out0) );
+  ib1s2 troj20_0U3 ( .DIN(Trigger_en0_1), .Q(troj20_0n2) );
+
+    xor2s1 trojan20_0  (.DIN1(tempn4186), .DIN2(Trojan_out0), .Q(n4186) );
+
+----------------------------------

@@ -1,0 +1,37 @@
+s13207_T454 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: FSM with 1 triggers and state transition:
+      2->0->1
+
+Effect: The Trojan alters the following signal(s)...
+g9088
+Activation Condition: The Trojan is triggered by the following internal signals...
+n1292 n1658 n1906 n826 g7110 n843 n677 g6317 n1377 n846 n1537
+****************************************************************
+TROJAN BODY: 
+  nor2s1 trig184_0U1 ( .DIN1(trig184_0n1), .DIN2(trig184_0n2), .Q(Trigger_en0_0) );
+  or4s1 trig184_0U2 ( .DIN1(n1537), .DIN2(n1377), .DIN3(g6317), .DIN4(trig184_0n3), .Q(trig184_0n2) );
+  nnd2s1 trig184_0U3 ( .DIN1(n1292), .DIN2(g7110), .Q(trig184_0n3) );
+  or4s1 trig184_0U4 ( .DIN1(n677), .DIN2(n1906), .DIN3(n1658), .DIN4(trig184_0n4), .Q(trig184_0n1) );
+  i1s1 trig184_0U5 ( .DIN(trig184_0n5), .Q(trig184_0n4) );
+  nor3s1 trig184_0U6 ( .DIN1(n826), .DIN2(n846), .DIN3(n843), .Q(trig184_0n5) );
+
+
+----------------------------------
+  dffs2 troj54_0state_reg_0_ ( .DIN(troj54_0n5), .CLK(CK), .Q(troj54_0n2), .QN(troj54_0n3) );
+  dffles2 troj54_0Trojan_out0_reg ( .DIN(troj54_0n2), .EB(troj54_0n1), .CLK(CK), .Q(Trojan_out0) );
+  ib1s1 troj54_0U3 ( .DIN(Trigger_en0_0), .Q(troj54_0n1) );
+  oai21s3 troj54_0U5 ( .DIN1(troj54_01'b0), .DIN2(troj54_0n4), .DIN3(troj54_0n3), .Q(troj54_0n5) );
+  nnd2s2 troj54_0U6 ( .DIN1(Trigger_en0_0), .DIN2(troj54_0n3), .Q(troj54_0n4) );
+
+    xor2s1 trojan54_0  (.DIN1(tempg9088), .DIN2(Trojan_out0), .Q(g9088) );
+
+----------------------------------

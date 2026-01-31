@@ -1,0 +1,65 @@
+s13207_T605 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: FSM with 1 triggers and state transition:
+      5->6->2->4->0->3->7->1->8
+      & combinational
+Effect: The Trojan alters the following signal(s)...
+n1331
+n1075
+Activation Condition: The Trojan is triggered by the following internal signals...
+n1751 g9031 n828 g8673 n1963 n781 g6891 n1036 n1674 g7521 n1578 n1642 g8957 g9096 n1973
+n1372 n752 n1861 n1600 n847 n852 n1787 n1131 n760 n756 g7774
+****************************************************************
+TROJAN BODY: 
+  and4s1 trig14_0U1 ( .DIN1(trig14_0n1), .DIN2(trig14_0n2), .DIN3(trig14_0n3), .DIN4(trig14_0n4), .Q(Trigger_en0_0) );
+  nor4s1 trig14_0U2 ( .DIN1(n828), .DIN2(n781), .DIN3(n1963), .DIN4(n1642), .Q(trig14_0n4) );
+  nor4s1 trig14_0U3 ( .DIN1(n1578), .DIN2(g9096), .DIN3(g9031), .DIN4(g8957), .Q(trig14_0n3)         );
+  and4s1 trig14_0U4 ( .DIN1(n1036), .DIN2(g8673), .DIN3(g6891), .DIN4(trig14_0n5), .Q(trig14_0n2) );
+  i1s1 trig14_0U5 ( .DIN(g7521), .Q(trig14_0n5) );
+  and3s1 trig14_0U6 ( .DIN1(n1751), .DIN2(n1674), .DIN3(n1973), .Q(trig14_0n1) );
+
+
+----------------------------------
+  dffs2 troj5_0state_reg_0_ ( .DIN(troj5_0n19), .CLK(CK), .Q(troj5_0state_0_), .QN(troj5_0n16) );
+  dffs2 troj5_0state_reg_1_ ( .DIN(troj5_0n18), .CLK(CK), .Q(troj5_0state_1_), .QN(troj5_0n10) );
+  dffles2 troj5_0state_reg_3_ ( .DIN(troj5_01'b1), .EB(troj5_0n14), .CLK(CK), .Q(troj5_0state_3_), .QN(troj5_0n15) );
+  dffles2 troj5_0state_reg_2_ ( .DIN(troj5_0n3), .EB(troj5_0n8), .CLK(CK), .Q(troj5_0state_2_), .QN(troj5_0n6) );
+  dffles2 troj5_0Trojan_out0_reg ( .DIN(troj5_0N58), .EB(troj5_0n2), .CLK(CK), .Q(Trojan_out0) );
+  and2s2 troj5_0U3 ( .DIN1(Trigger_en0_0), .DIN2(troj5_0n1), .Q(troj5_0N57) );
+  oai13s2 troj5_0U4 ( .DIN2(troj5_0state_0_), .DIN3(troj5_0state_2_), .DIN4(troj5_0state_1_), .DIN1(troj5_0state_3_), .Q(troj5_0n1) );
+  ib1s1 troj5_0U5 ( .DIN(troj5_0N57), .Q(troj5_0n2) );
+  ib1s1 troj5_0U6 ( .DIN(troj5_0n7), .Q(troj5_0n3) );
+  aoi22s3 troj5_0U8 ( .DIN1(troj5_0state_1_), .DIN2(troj5_0n6), .DIN3(troj5_0n9), .DIN4(troj5_0n10), .Q(troj5_0n7) );
+  oai24s3 troj5_0U9 ( .DIN3(troj5_0state_3_), .DIN4(troj5_0state_1_), .DIN5(troj5_0n11), .DIN6(troj5_0n12),         .DIN1(troj5_0n13), .DIN2(troj5_0n10), .Q(troj5_0n18) );
+  nor3s2 troj5_0U10 ( .DIN1(troj5_0n11), .DIN2(troj5_0state_3_), .DIN3(troj5_0n12), .Q(troj5_0n13) );
+  ib1s2 troj5_0U11 ( .DIN(Trigger_en0_0), .Q(troj5_0n11) );
+  nnd4s2 troj5_0U12 ( .DIN1(troj5_0n5), .DIN2(troj5_0state_0_), .DIN3(troj5_0n10), .DIN4(troj5_0n6), .Q(troj5_0n14) );
+  oai21s3 troj5_0U13 ( .DIN1(troj5_0n5), .DIN2(troj5_0n16), .DIN3(troj5_0n17), .Q(troj5_0n19) );
+  aoi42s2 troj5_0U14 ( .DIN1(troj5_0n5), .DIN2(troj5_0n16), .DIN3(troj5_0n10), .DIN4(troj5_0n6), .DIN5(troj5_0state_0_),         .DIN6(troj5_0state_1_), .Q(troj5_0n17) );
+  ib1s2 troj5_0U15 ( .DIN(troj5_0n8), .Q(troj5_0n5) );
+  nnd2s2 troj5_0U16 ( .DIN1(Trigger_en0_0), .DIN2(troj5_0n15), .Q(troj5_0n8) );
+  nor4s3 troj5_0U17 ( .DIN1(troj5_0n12), .DIN2(troj5_0n15), .DIN3(troj5_0n9), .DIN4(troj5_0state_1_), .Q(troj5_0N58) );
+  nor2s2 troj5_0U18 ( .DIN1(troj5_0n6), .DIN2(troj5_0n16), .Q(troj5_0n9) );
+  xnr2s2 troj5_0U19 ( .DIN1(troj5_0n16), .DIN2(troj5_0state_2_), .Q(troj5_0n12) );
+
+    xor2s1 trojan5_0  (.DIN1(tempn1331), .DIN2(Trojan_out0), .Q(n1331) );
+
+----------------------------------
+  nor2s1 troj5_1U1 ( .DIN1(troj5_1n1), .DIN2(troj5_1n2), .Q(Trigger_en1_5) );
+  nnd4s1 troj5_1U2 ( .DIN1(n760), .DIN2(n752), .DIN3(troj5_1n3), .DIN4(n1372), .Q(troj5_1n2) );
+  nor2s1 troj5_1U3 ( .DIN1(n1131), .DIN2(g7774), .Q(troj5_1n3) );
+  or5s1 troj5_1U4 ( .DIN1(n1861), .DIN2(n1787), .DIN3(n1600), .DIN4(n756), .DIN5(troj5_1n4),         .Q(troj5_1n1) );
+  i1s1 troj5_1U5 ( .DIN(troj5_1n5), .Q(troj5_1n4) );
+  nor2s1 troj5_1U6 ( .DIN1(n852), .DIN2(n847), .Q(troj5_1n5) );
+
+    xor2s1 trojan5_1  (.DIN1(tempn1075), .DIN2(Trigger_en1_5), .Q(n1075) );
+
+----------------------------------

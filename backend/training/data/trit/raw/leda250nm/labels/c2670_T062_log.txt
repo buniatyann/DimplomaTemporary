@@ -1,0 +1,25 @@
+c2670_T062 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+n814
+Activation Condition: The Trojan is triggered by the following internal signals...
+n510 n773 n672 n904 n392 n588
+****************************************************************
+TROJAN BODY: 
+  nor2s1 troj62_0U1 ( .DIN1(troj62_0n1), .DIN2(troj62_0n2), .Q(Trigger_en62_0) );
+  nnd2s1 troj62_0U2 ( .DIN1(troj62_0n3), .DIN2(n773), .Q(troj62_0n2) );
+  nor2s1 troj62_0U3 ( .DIN1(n510), .DIN2(n392), .Q(troj62_0n3) );
+  or3s1 troj62_0U4 ( .DIN1(n904), .DIN2(n672), .DIN3(n588), .Q(troj62_0n1) );
+
+    xor2s1 trojan62_0  (.DIN1(tempn814), .DIN2(Trigger_en62_0), .Q(n814) );
+
+----------------------------------

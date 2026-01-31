@@ -1,0 +1,39 @@
+s15850_T218 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+g8449
+n1474
+Activation Condition: The Trojan is triggered by the following internal signals...
+n553 n984 n2394 n1346 n918 g6817 n1312 n1864 n1711 n2838 n1083 n2221
+g8425 n1253 n1368 n2236 n1481 n2133 n831 g11634 n1814 n1876 n1390 n2371
+****************************************************************
+TROJAN BODY: 
+  nor5s1 troj18_0U1 ( .DIN1(troj18_0n1), .DIN2(troj18_0n2), .DIN3(troj18_0n3), .DIN4(n1083), .DIN5(troj18_0n4), .Q(        Trigger_en18_0) );
+  i1s1 troj18_0U2 ( .DIN(g6817), .Q(troj18_0n4) );
+  i1s1 troj18_0U3 ( .DIN(n1864), .Q(troj18_0n3) );
+  nnd3s1 troj18_0U4 ( .DIN1(n2838), .DIN2(n2394), .DIN3(n553), .Q(troj18_0n2) );
+  or5s1 troj18_0U5 ( .DIN1(n1711), .DIN2(n1346), .DIN3(n1312), .DIN4(n2221), .DIN5(troj18_0n5),         .Q(troj18_0n1) );
+  or2s1 troj18_0U6 ( .DIN1(n984), .DIN2(n918), .Q(troj18_0n5) );
+
+    xor2s1 trojan18_0  (.DIN1(tempg8449), .DIN2(Trigger_en18_0), .Q(g8449) );
+
+----------------------------------
+  i1s1 troj18_1U1 ( .DIN(troj18_1n1), .Q(Trigger_en18_1) );
+  or5s1 troj18_1U2 ( .DIN1(n1481), .DIN2(n1390), .DIN3(n1368), .DIN4(troj18_1n2), .DIN5(troj18_1n3),         .Q(troj18_1n1) );
+  or5s1 troj18_1U3 ( .DIN1(n2133), .DIN2(n1876), .DIN3(n1814), .DIN4(n2236), .DIN5(troj18_1n4),         .Q(troj18_1n3) );
+  or2s1 troj18_1U4 ( .DIN1(n831), .DIN2(n2371), .Q(troj18_1n4) );
+  nnd3s1 troj18_1U5 ( .DIN1(g8425), .DIN2(troj18_1n5), .DIN3(n1253), .Q(troj18_1n2) );
+  i1s1 troj18_1U6 ( .DIN(g11634), .Q(troj18_1n5) );
+
+    xor2s1 trojan18_1  (.DIN1(tempn1474), .DIN2(Trigger_en18_1), .Q(n1474) );
+
+----------------------------------

@@ -1,0 +1,38 @@
+s13207_T204 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+n1180
+g6324
+Activation Condition: The Trojan is triggered by the following internal signals...
+g5181 n1286 n957 n1857 n1759 n837 g9115 g6351 n753 g7521 n1290 n1681 g6313 n914 n908
+n1896 n1707 g4668 g5174 n1366 n833 n1786 n1259 g8666 n815 n1984 g8873 n845 n976
+****************************************************************
+TROJAN BODY: 
+  and4s1 troj4_0U1 ( .DIN1(troj4_0n1), .DIN2(troj4_0n2), .DIN3(troj4_0n3), .DIN4(troj4_0n4), .Q(Trigger_en4_0) );
+  nor4s1 troj4_0U2 ( .DIN1(n914), .DIN2(n908), .DIN3(n753), .DIN4(n1857), .Q(troj4_0n4) );
+  nor4s1 troj4_0U3 ( .DIN1(n1759), .DIN2(n1681), .DIN3(g9115), .DIN4(g7521), .Q(troj4_0n3)         );
+  nor4s1 troj4_0U4 ( .DIN1(g6351), .DIN2(g6313), .DIN3(g5181), .DIN4(troj4_0n5), .Q(troj4_0n2) );
+  i1s1 troj4_0U5 ( .DIN(n1286), .Q(troj4_0n5) );
+  and3s1 troj4_0U6 ( .DIN1(n837), .DIN2(n1290), .DIN3(n957), .Q(troj4_0n1) );
+
+    xor2s1 trojan4_0  (.DIN1(tempn1180), .DIN2(Trigger_en4_0), .Q(n1180) );
+
+----------------------------------
+  nor5s1 troj4_1U1 ( .DIN1(troj4_1n1), .DIN2(troj4_1n2), .DIN3(n1366), .DIN4(n1896), .DIN5(n1707),         .Q(Trigger_en4_1) );
+  or4s1 troj4_1U2 ( .DIN1(n815), .DIN2(n1984), .DIN3(n845), .DIN4(n833), .Q(troj4_1n2) );
+  nnd4s1 troj4_1U3 ( .DIN1(g8873), .DIN2(g4668), .DIN3(troj4_1n3), .DIN4(troj4_1n4), .Q(troj4_1n1) );
+  and3s1 troj4_1U4 ( .DIN1(n1786), .DIN2(n1259), .DIN3(n976), .Q(troj4_1n4) );
+  nor2s1 troj4_1U5 ( .DIN1(g8666), .DIN2(g5174), .Q(troj4_1n3) );
+
+    xor2s1 trojan4_1  (.DIN1(tempg6324), .DIN2(Trigger_en4_1), .Q(g6324) );
+
+----------------------------------

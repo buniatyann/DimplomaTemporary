@@ -1,0 +1,58 @@
+s13207_T438 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: FSM with 1 triggers and state transition:
+      11->3->8->4->5->9->10->1->0->7->2->6
+
+Effect: The Trojan alters the following signal(s)...
+n1277
+Activation Condition: The Trojan is triggered by the following internal signals...
+n770 n1253 n1534 g5182 n1737 g8665 n1945 n1630 n1688 n1813 g7304 n1569 n1863 n1796
+****************************************************************
+TROJAN BODY: 
+  and4s1 trig131_0U1 ( .DIN1(trig131_0n1), .DIN2(trig131_0n2), .DIN3(trig131_0n3), .DIN4(trig131_0n4), .Q(Trigger_en0_0) );
+  and4s1 trig131_0U2 ( .DIN1(g7304), .DIN2(g5182), .DIN3(n1253), .DIN4(trig131_0n5), .Q(trig131_0n4) );
+  nor3s1 trig131_0U3 ( .DIN1(trig131_0n6), .DIN2(n1534), .DIN3(g8665), .Q(trig131_0n5) );
+  or2s1 trig131_0U4 ( .DIN1(n1630), .DIN2(n1569), .Q(trig131_0n6) );
+  nor3s1 trig131_0U5 ( .DIN1(n1688), .DIN2(n1796), .DIN3(n1737), .Q(trig131_0n3) );
+  nor2s1 trig131_0U6 ( .DIN1(n770), .DIN2(n1945), .Q(trig131_0n2) );
+  nor2s1 trig131_0U7 ( .DIN1(n1863), .DIN2(n1813), .Q(trig131_0n1) );
+
+
+----------------------------------
+  dffles2 troj38_0state_reg_0_ ( .DIN(troj38_0N78), .EB(troj38_0n8), .CLK(CK), .Q(troj38_0state_0_), .QN(troj38_0n11)         );
+  dffles2 troj38_0state_reg_1_ ( .DIN(troj38_0N79), .EB(troj38_0n8), .CLK(CK), .Q(troj38_0state_1_), .QN(troj38_0n13)         );
+  dffles2 troj38_0state_reg_2_ ( .DIN(troj38_0N80), .EB(troj38_0n8), .CLK(CK), .Q(troj38_0state_2_), .QN(troj38_0n14)         );
+  dffles2 troj38_0state_reg_3_ ( .DIN(troj38_0N81), .EB(troj38_0n8), .CLK(CK), .Q(troj38_0state_3_), .QN(troj38_0n10)         );
+  dffles2 troj38_0Trojan_out0_reg ( .DIN(troj38_0N76), .EB(troj38_0n7), .CLK(CK), .Q(Trojan_out0) );
+  ib1s2 troj38_0U3 ( .DIN(troj38_0state_1_), .Q(troj38_0n1) );
+  nor2s2 troj38_0U4 ( .DIN1(troj38_0state_0_), .DIN2(troj38_0n1), .Q(troj38_0n2) );
+  ib1s2 troj38_0U5 ( .DIN(Trigger_en0_0), .Q(troj38_0n3) );
+  mxi21s3 troj38_0U6 ( .DIN1(troj38_0n4), .DIN2(troj38_0n5), .SIN(troj38_0n2), .Q(troj38_0N77) );
+  or2s2 troj38_0U7 ( .DIN1(troj38_0state_2_), .DIN2(troj38_0n3), .Q(troj38_0n5) );
+  ib1s2 troj38_0U8 ( .DIN(troj38_0n5), .Q(troj38_0n6) );
+  mxi21s3 troj38_0U9 ( .DIN1(Trigger_en0_0), .DIN2(troj38_0n6), .SIN(troj38_0state_3_), .Q(troj38_0n4) );
+  ib1s2 troj38_0U10 ( .DIN(troj38_0n4), .Q(troj38_0N75) );
+  ib1s1 troj38_0U11 ( .DIN(troj38_0N75), .Q(troj38_0n7) );
+  ib1s1 troj38_0U12 ( .DIN(troj38_0N77), .Q(troj38_0n8) );
+  aoi211s2 troj38_0U13 ( .DIN1(troj38_0n9), .DIN2(troj38_0n10), .DIN3(troj38_0n11), .DIN4(troj38_0n12), .Q(troj38_0N81) );
+  nor2s2 troj38_0U14 ( .DIN1(troj38_0state_0_), .DIN2(troj38_0n12), .Q(troj38_0N80) );
+  oai22s2 troj38_0U15 ( .DIN1(troj38_0n13), .DIN2(troj38_0n14), .DIN3(troj38_0n9), .DIN4(troj38_0n10), .Q(troj38_0n12) );
+  nor2s2 troj38_0U16 ( .DIN1(troj38_0state_1_), .DIN2(troj38_0state_2_), .Q(troj38_0n9) );
+  oai33s3 troj38_0U17 ( .DIN1(troj38_0n13), .DIN2(troj38_0state_2_), .DIN3(troj38_0n10), .DIN4(troj38_0n17), .DIN5(troj38_0state_3_), .DIN6(troj38_0state_1_), .Q(troj38_0N78) );
+  ib1s2 troj38_0U18 ( .DIN(troj38_0n16), .Q(troj38_0n17) );
+  nnd2s2 troj38_0U19 ( .DIN1(troj38_0state_0_), .DIN2(troj38_0n14), .Q(troj38_0n16) );
+  nor2s2 troj38_0U20 ( .DIN1(troj38_0state_0_), .DIN2(troj38_0n15), .Q(troj38_0N76) );
+  nnd3s2 troj38_0U21 ( .DIN1(troj38_0state_1_), .DIN2(troj38_0n10), .DIN3(troj38_0state_2_), .Q(troj38_0n15) );
+  oai322s1 troj38_0U22 ( .DIN1(troj38_0state_0_), .DIN2(troj38_0state_3_), .DIN3(troj38_0state_2_), .DIN4(troj38_0n11),         .DIN5(troj38_0n15), .DIN6(troj38_0n10), .DIN7(troj38_0n16), .Q(troj38_0N79) );
+
+    xor2s1 trojan38_0  (.DIN1(tempn1277), .DIN2(Trojan_out0), .Q(n1277) );
+
+----------------------------------

@@ -1,0 +1,26 @@
+c5315_T092 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+N8037
+Activation Condition: The Trojan is triggered by the following internal signals...
+N2869 N7184 N2842 N7719 N4191 N6375 N7585 N4186 N2903 N2907 N3770
+****************************************************************
+TROJAN BODY: 
+  nor5s1 troj92_0U1 ( .DIN1(troj92_0n1), .DIN2(troj92_0n2), .DIN3(N7184), .DIN4(N7719), .DIN5(N7585),         .Q(Trigger_en92_0) );
+  nnd2s1 troj92_0U2 ( .DIN1(troj92_0n3), .DIN2(N2842), .Q(troj92_0n2) );
+  nor2s1 troj92_0U3 ( .DIN1(N4186), .DIN2(N3770), .Q(troj92_0n3) );
+  nnd4s1 troj92_0U4 ( .DIN1(N6375), .DIN2(N4191), .DIN3(troj92_0n4), .DIN4(N2907), .Q(troj92_0n1) );
+  and2s1 troj92_0U5 ( .DIN1(N2903), .DIN2(N2869), .Q(troj92_0n4) );
+
+    xor2s1 trojan92_0  (.DIN1(tempN8037), .DIN2(Trigger_en92_0), .Q(N8037) );
+
+----------------------------------

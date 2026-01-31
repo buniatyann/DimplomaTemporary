@@ -1,0 +1,61 @@
+s35932_T406 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: FSM with 1 triggers and state transition:
+      0->9->8->2->4->7->1->6->3->5
+
+Effect: The Trojan alters the following signal(s)...
+WX3256
+Activation Condition: The Trojan is triggered by the following internal signals...
+n2123 n4061 n1787 n4950 n1813 n4013 n1990 n2838 n4255 n4546 n4277
+****************************************************************
+TROJAN BODY: 
+  nor5s1 trig19_0U1 ( .DIN1(trig19_0n1), .DIN2(trig19_0n2), .DIN3(n1787), .DIN4(n1990), .DIN5(n1813),         .Q(Trigger_en0_0) );
+  nnd2s1 trig19_0U2 ( .DIN1(n4950), .DIN2(n4546), .Q(trig19_0n2) );
+  or5s1 trig19_0U3 ( .DIN1(n4013), .DIN2(n2838), .DIN3(n2123), .DIN4(n4061), .DIN5(trig19_0n3),         .Q(trig19_0n1) );
+  i1s1 trig19_0U4 ( .DIN(trig19_0n4), .Q(trig19_0n3) );
+  nor2s1 trig19_0U5 ( .DIN1(n4277), .DIN2(n4255), .Q(trig19_0n4) );
+
+
+----------------------------------
+  dffles2 troj6_0state_reg_0_ ( .DIN(troj6_0N66), .EB(troj6_0n11), .CLK(CK), .Q(troj6_0state_0_) );
+  dffles2 troj6_0state_reg_1_ ( .DIN(troj6_0N67), .EB(troj6_0n11), .CLK(CK), .Q(troj6_0state_1_), .QN(troj6_0n12)         );
+  dffles2 troj6_0state_reg_3_ ( .DIN(troj6_0N69), .EB(troj6_0n11), .CLK(CK), .Q(troj6_0state_3_), .QN(troj6_0n19)         );
+  dffles2 troj6_0state_reg_2_ ( .DIN(troj6_0N68), .EB(troj6_0n11), .CLK(CK), .Q(troj6_0state_2_), .QN(troj6_0n13)         );
+  dffles2 troj6_0Trojan_out0_reg ( .DIN(troj6_0N64), .EB(troj6_0n10), .CLK(CK), .Q(Trojan_out0) );
+  ib1s2 troj6_0U3 ( .DIN(Trigger_en0_0), .Q(troj6_0n1) );
+  or2s2 troj6_0U4 ( .DIN1(troj6_0state_3_), .DIN2(troj6_0n1), .Q(troj6_0n2) );
+  ib1s2 troj6_0U5 ( .DIN(troj6_0state_1_), .Q(troj6_0n3) );
+  mxi21s3 troj6_0U6 ( .DIN1(Trigger_en0_0), .DIN2(troj6_0n5), .SIN(troj6_0state_1_), .Q(troj6_0n4) );
+  mxi21s3 troj6_0U7 ( .DIN1(troj6_0n6), .DIN2(troj6_0n7), .SIN(troj6_0state_0_), .Q(troj6_0N65) );
+  ib1s2 troj6_0U8 ( .DIN(troj6_0n2), .Q(troj6_0n5) );
+  oai21s3 troj6_0U9 ( .DIN1(troj6_0n2), .DIN2(troj6_0n3), .DIN3(troj6_0state_2_), .Q(troj6_0n8) );
+  ib1s2 troj6_0U10 ( .DIN(troj6_0n4), .Q(troj6_0n9) );
+  mxi21s3 troj6_0U11 ( .DIN1(troj6_0n9), .DIN2(troj6_0n5), .SIN(troj6_0state_2_), .Q(troj6_0n6) );
+  ib1s2 troj6_0U12 ( .DIN(troj6_0n6), .Q(troj6_0N63) );
+  nnd2s2 troj6_0U13 ( .DIN1(troj6_0n9), .DIN2(troj6_0n8), .Q(troj6_0n7) );
+  ib1s1 troj6_0U14 ( .DIN(troj6_0N63), .Q(troj6_0n10) );
+  ib1s1 troj6_0U15 ( .DIN(troj6_0N65), .Q(troj6_0n11) );
+  and3s2 troj6_0U16 ( .DIN1(troj6_0n12), .DIN2(troj6_0n13), .DIN3(troj6_0n14), .Q(troj6_0N69) );
+  nor2s2 troj6_0U17 ( .DIN1(troj6_0state_3_), .DIN2(troj6_0n15), .Q(troj6_0N68) );
+  xor2s2 troj6_0U18 ( .DIN1(troj6_0state_2_), .DIN2(troj6_0n16), .Q(troj6_0n15) );
+  nor2s2 troj6_0U19 ( .DIN1(troj6_0state_0_), .DIN2(troj6_0state_1_), .Q(troj6_0n16) );
+  aoi21s3 troj6_0U20 ( .DIN1(troj6_0state_0_), .DIN2(troj6_0state_3_), .DIN3(troj6_0n17), .Q(troj6_0N67) );
+  aoi23s2 troj6_0U21 ( .DIN3(troj6_0n12), .DIN4(troj6_0n13), .DIN5(troj6_0n18), .DIN1(troj6_0state_2_), .DIN2(troj6_0n14), .Q(troj6_0n17) );
+  ib1s2 troj6_0U22 ( .DIN(troj6_0n14), .Q(troj6_0n18) );
+  xor2s2 troj6_0U23 ( .DIN1(troj6_0n19), .DIN2(troj6_0state_0_), .Q(troj6_0n14) );
+  nor2s2 troj6_0U24 ( .DIN1(troj6_0state_3_), .DIN2(troj6_0n20), .Q(troj6_0N66) );
+  aoi21s3 troj6_0U25 ( .DIN1(troj6_0state_1_), .DIN2(troj6_0state_0_), .DIN3(troj6_0n21), .Q(troj6_0n20) );
+  aoi21s3 troj6_0U26 ( .DIN1(troj6_0state_1_), .DIN2(troj6_0n13), .DIN3(troj6_0state_0_), .Q(troj6_0n21) );
+  and4s2 troj6_0U27 ( .DIN1(troj6_0state_2_), .DIN2(troj6_0state_0_), .DIN3(troj6_0n12), .DIN4(troj6_0n19), .Q(troj6_0N64) );
+
+    xor2s1 trojan6_0  (.DIN1(tempWX3256), .DIN2(Trojan_out0), .Q(WX3256) );
+
+----------------------------------

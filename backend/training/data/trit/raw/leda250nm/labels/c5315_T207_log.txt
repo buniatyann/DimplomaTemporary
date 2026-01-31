@@ -1,0 +1,42 @@
+c5315_T207 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+N8064
+N7926
+Activation Condition: The Trojan is triggered by the following internal signals...
+N1280 N6655 N5312 N8042 N3766 N3658 N7839 N6708 N6885 N3989 N2959
+N3492 N3561 N2918 N7441 N1929 N6083 N1436 N2692 N7456 N2846
+****************************************************************
+TROJAN BODY: 
+  nor4s1 troj7_0U1 ( .DIN1(troj7_0n1), .DIN2(troj7_0n2), .DIN3(troj7_0n3), .DIN4(troj7_0n4), .Q(Trigger_en7_0) );
+  nnd2s1 troj7_0U2 ( .DIN1(N6708), .DIN2(N6655), .Q(troj7_0n4) );
+  i1s1 troj7_0U3 ( .DIN(N6885), .Q(troj7_0n3) );
+  nnd2s1 troj7_0U4 ( .DIN1(N8042), .DIN2(N7839), .Q(troj7_0n2) );
+  nnd4s1 troj7_0U5 ( .DIN1(N3989), .DIN2(N3766), .DIN3(N5312), .DIN4(troj7_0n5), .Q(troj7_0n1) );
+  nor3s1 troj7_0U6 ( .DIN1(troj7_0n6), .DIN2(N1280), .DIN3(troj7_0n7), .Q(troj7_0n5) );
+  i1s1 troj7_0U7 ( .DIN(N2959), .Q(troj7_0n7) );
+  i1s1 troj7_0U8 ( .DIN(N3658), .Q(troj7_0n6) );
+
+    xor2s1 trojan7_0  (.DIN1(tempN8064), .DIN2(Trigger_en7_0), .Q(N8064) );
+
+----------------------------------
+  nor2s1 troj7_1U1 ( .DIN1(troj7_1n1), .DIN2(troj7_1n2), .Q(Trigger_en7_1) );
+  nnd4s1 troj7_1U2 ( .DIN1(N7456), .DIN2(N7441), .DIN3(troj7_1n3), .DIN4(N6083), .Q(troj7_1n2) );
+  i1s1 troj7_1U3 ( .DIN(troj7_1n4), .Q(troj7_1n3) );
+  nnd2s1 troj7_1U4 ( .DIN1(N2918), .DIN2(N3492), .Q(troj7_1n4) );
+  nnd4s1 troj7_1U5 ( .DIN1(N2846), .DIN2(N2692), .DIN3(troj7_1n5), .DIN4(troj7_1n6), .Q(troj7_1n1) );
+  i1s1 troj7_1U6 ( .DIN(N1436), .Q(troj7_1n6) );
+  nor2s1 troj7_1U7 ( .DIN1(N3561), .DIN2(N1929), .Q(troj7_1n5) );
+
+    xor2s1 trojan7_1  (.DIN1(tempN7926), .DIN2(Trigger_en7_1), .Q(N7926) );
+
+----------------------------------

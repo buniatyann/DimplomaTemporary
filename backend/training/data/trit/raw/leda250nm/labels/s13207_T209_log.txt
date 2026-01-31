@@ -1,0 +1,41 @@
+s13207_T209 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+n1224
+n1050
+Activation Condition: The Trojan is triggered by the following internal signals...
+n1248 n1052 n1927 n1355 g8672 n1617 n1726 g5186 n855 g9116 g8669
+n858 n1366 n727 n1082 g6858 n746 g6881 g7307 g5166 g6368 n1869 n1372 n851 g9373 n827 n1769 n1740
+****************************************************************
+TROJAN BODY: 
+  and4s1 troj9_0U1 ( .DIN1(g8672), .DIN2(g5186), .DIN3(troj9_0n1), .DIN4(troj9_0n2), .Q(        Trigger_en9_0) );
+  nor4s1 troj9_0U2 ( .DIN1(n1726), .DIN2(troj9_0n3), .DIN3(n1248), .DIN4(troj9_0n4), .Q(troj9_0n2) );
+  or2s1 troj9_0U3 ( .DIN1(n1617), .DIN2(n1355), .Q(troj9_0n4) );
+  or2s1 troj9_0U4 ( .DIN1(n855), .DIN2(n1927), .Q(troj9_0n3) );
+  nor2s1 troj9_0U5 ( .DIN1(g8669), .DIN2(troj9_0n5), .Q(troj9_0n1) );
+  or2s1 troj9_0U6 ( .DIN1(n1052), .DIN2(g9116), .Q(troj9_0n5) );
+
+    xor2s1 trojan9_0  (.DIN1(tempn1224), .DIN2(Trigger_en9_0), .Q(n1224) );
+
+----------------------------------
+  and4s1 troj9_1U1 ( .DIN1(troj9_1n1), .DIN2(troj9_1n2), .DIN3(troj9_1n3), .DIN4(troj9_1n4), .Q(Trigger_en9_1) );
+  and4s1 troj9_1U2 ( .DIN1(g5166), .DIN2(troj9_1n5), .DIN3(troj9_1n6), .DIN4(troj9_1n7), .Q(troj9_1n4) );
+  and4s1 troj9_1U3 ( .DIN1(n1769), .DIN2(n1740), .DIN3(n1372), .DIN4(g6881), .Q(troj9_1n7)         );
+  nor2s1 troj9_1U4 ( .DIN1(g7307), .DIN2(g6858), .Q(troj9_1n6) );
+  i1s1 troj9_1U5 ( .DIN(g6368), .Q(troj9_1n5) );
+  nor5s1 troj9_1U6 ( .DIN1(n746), .DIN2(n727), .DIN3(n827), .DIN4(n858), .DIN5(n851),         .Q(troj9_1n3) );
+  nor2s1 troj9_1U7 ( .DIN1(n1869), .DIN2(n1366), .Q(troj9_1n2) );
+  nor2s1 troj9_1U8 ( .DIN1(n1082), .DIN2(g9373), .Q(troj9_1n1) );
+
+    xor2s1 trojan9_1  (.DIN1(tempn1050), .DIN2(Trigger_en9_1), .Q(n1050) );
+
+----------------------------------

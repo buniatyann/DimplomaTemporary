@@ -1,0 +1,44 @@
+s1423_T423 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: counter with 11 states
+
+Effect: The Trojan alters the following signal(s)...
+n77
+Activation Condition: The Trojan is triggered by the following internal signals...
+n261 n178 n326 n253 n229 n258 n327 n112
+****************************************************************
+TROJAN BODY: 
+  nor5s1 trig79_0U1 ( .DIN1(trig79_0n1), .DIN2(n327), .DIN3(n261), .DIN4(n253), .DIN5(n229),         .Q(Trigger_en0_0) );
+  nnd3s1 trig79_0U2 ( .DIN1(n326), .DIN2(n258), .DIN3(trig79_0n2), .Q(trig79_0n1) );
+  nor2s1 trig79_0U3 ( .DIN1(n178), .DIN2(n112), .Q(trig79_0n2) );
+
+
+----------------------------------
+  dffs2 troj23_0counter_reg_0_ ( .DIN(troj23_0n10), .CLK(CK), .Q(troj23_0counter_0_) );
+  dffles2 troj23_0counter_reg_1_ ( .DIN(troj23_0N1), .EB(troj23_0n9), .CLK(CK), .QN(troj23_0n6) );
+  dffles2 troj23_0counter_reg_2_ ( .DIN(troj23_0N2), .EB(troj23_0n9), .CLK(CK), .QN(troj23_0n8) );
+  dffles2 troj23_0counter_reg_3_ ( .DIN(troj23_0N3), .EB(troj23_0n9), .CLK(CK), .QN(troj23_0n7) );
+  dffs2 troj23_0Trojan_out0_reg ( .DIN(troj23_0N6), .CLK(CK), .Q(Trojan_out0) );
+  hi1s1 troj23_0U3 ( .DIN(Trigger_en0_0), .Q(troj23_0n9) );
+  xnr2s1 troj23_0U4 ( .DIN1(troj23_0n1), .DIN2(Trigger_en0_0), .Q(troj23_0n10) );
+  and3s1 troj23_0U5 ( .DIN1(troj23_0n2), .DIN2(troj23_0n3), .DIN3(troj23_0n4), .Q(troj23_0N6) );
+  xnr2s1 troj23_0U6 ( .DIN1(troj23_0n5), .DIN2(troj23_0n3), .Q(troj23_0N3) );
+  hi1s1 troj23_0U7 ( .DIN(troj23_0n7), .Q(troj23_0n3) );
+  nnd2s1 troj23_0U8 ( .DIN1(troj23_0n4), .DIN2(troj23_0n2), .Q(troj23_0n5) );
+  hi1s1 troj23_0U9 ( .DIN(troj23_0n8), .Q(troj23_0n2) );
+  xnr2s1 troj23_0U10 ( .DIN1(troj23_0n8), .DIN2(troj23_0n4), .Q(troj23_0N2) );
+  nor2s1 troj23_0U11 ( .DIN1(troj23_0n1), .DIN2(troj23_0n6), .Q(troj23_0n4) );
+  hi1s1 troj23_0U12 ( .DIN(troj23_0counter_0_), .Q(troj23_0n1) );
+  xnr2s1 troj23_0U13 ( .DIN1(troj23_0counter_0_), .DIN2(troj23_0n6), .Q(troj23_0N1) );
+
+    xor2s1 trojan23_0  (.DIN1(tempn77), .DIN2(Trojan_out0), .Q(n77) );
+
+----------------------------------

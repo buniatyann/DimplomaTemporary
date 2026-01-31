@@ -1,0 +1,39 @@
+s15850_T204 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+g7363
+n1299
+Activation Condition: The Trojan is triggered by the following internal signals...
+n2181 g7355 n1710 n2313 n1908 g7289 n614 n1749 n1622 g9356 n622 n2118 n1737 g8276 n567
+n1018 n621 n913 n1627 n1324 n1080 g9350 n1446 n858 g11470 n1298 n2275 n744
+****************************************************************
+TROJAN BODY: 
+  and3s1 troj4_0U1 ( .DIN1(troj4_0n1), .DIN2(troj4_0n2), .DIN3(troj4_0n3), .Q(Trigger_en4_0) );
+  nor4s1 troj4_0U2 ( .DIN1(troj4_0n4), .DIN2(troj4_0n5), .DIN3(g9356), .DIN4(g7355), .Q(troj4_0n3) );
+  nnd2s1 troj4_0U3 ( .DIN1(g8276), .DIN2(g7289), .Q(troj4_0n5) );
+  nnd3s1 troj4_0U4 ( .DIN1(n1737), .DIN2(n1710), .DIN3(n1908), .Q(troj4_0n4) );
+  nor4s1 troj4_0U5 ( .DIN1(n622), .DIN2(n614), .DIN3(n567), .DIN4(n2313), .Q(troj4_0n2) );
+  nor4s1 troj4_0U6 ( .DIN1(n2181), .DIN2(n2118), .DIN3(n1749), .DIN4(n1622), .Q(troj4_0n1)         );
+
+    xor2s1 trojan4_0  (.DIN1(tempg7363), .DIN2(Trigger_en4_0), .Q(g7363) );
+
+----------------------------------
+  nor5s1 troj4_1U1 ( .DIN1(troj4_1n1), .DIN2(troj4_1n2), .DIN3(n1324), .DIN4(n1627), .DIN5(n1446),         .Q(Trigger_en4_1) );
+  nnd2s1 troj4_1U2 ( .DIN1(troj4_1n3), .DIN2(troj4_1n4), .Q(troj4_1n2) );
+  nor2s1 troj4_1U3 ( .DIN1(n913), .DIN2(n858), .Q(troj4_1n4) );
+  nor2s1 troj4_1U4 ( .DIN1(n621), .DIN2(n2275), .Q(troj4_1n3) );
+  nnd4s1 troj4_1U5 ( .DIN1(n1298), .DIN2(g11470), .DIN3(n744), .DIN4(troj4_1n5), .Q(troj4_1n1) );
+  nor3s1 troj4_1U6 ( .DIN1(g9350), .DIN2(n1080), .DIN3(n1018), .Q(troj4_1n5) );
+
+    xor2s1 trojan4_1  (.DIN1(tempn1299), .DIN2(Trigger_en4_1), .Q(n1299) );
+
+----------------------------------

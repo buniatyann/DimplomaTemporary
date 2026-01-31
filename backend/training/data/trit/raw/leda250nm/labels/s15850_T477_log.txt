@@ -1,0 +1,42 @@
+s15850_T477 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: counter with 6 states
+
+Effect: The Trojan alters the following signal(s)...
+n2186
+Activation Condition: The Trojan is triggered by the following internal signals...
+n2296 n2356 n922 n1371 n1701 g11328 n1709 n1464 g7760 n1010 n1799 n718 n2301
+****************************************************************
+TROJAN BODY: 
+  nor5s1 trig251_0U1 ( .DIN1(trig251_0n1), .DIN2(trig251_0n2), .DIN3(n1371), .DIN4(n1701), .DIN5(n1464),         .Q(Trigger_en0_0) );
+  or4s1 trig251_0U2 ( .DIN1(n2296), .DIN2(n1709), .DIN3(n922), .DIN4(n718), .Q(trig251_0n2) );
+  or5s1 trig251_0U3 ( .DIN1(n1010), .DIN2(g7760), .DIN3(g11328), .DIN4(trig251_0n3), .DIN5(trig251_0n4),         .Q(trig251_0n1) );
+  nnd2s1 trig251_0U4 ( .DIN1(n2301), .DIN2(n1799), .Q(trig251_0n4) );
+  i1s1 trig251_0U5 ( .DIN(n2356), .Q(trig251_0n3) );
+
+
+----------------------------------
+  dffs2 troj77_0counter_reg_0_ ( .DIN(troj77_0n7), .CLK(CK), .Q(troj77_0counter_0_) );
+  dffles2 troj77_0counter_reg_1_ ( .DIN(troj77_0N1), .EB(troj77_0n6), .CLK(CK), .QN(troj77_0n5) );
+  dffles2 troj77_0counter_reg_2_ ( .DIN(troj77_0N2), .EB(troj77_0n6), .CLK(CK), .QN(troj77_0n4) );
+  dffs2 troj77_0Trojan_out0_reg ( .DIN(troj77_0N4), .CLK(CK), .Q(Trojan_out0) );
+  hi1s1 troj77_0U3 ( .DIN(Trigger_en0_0), .Q(troj77_0n6) );
+  xor2s1 troj77_0U4 ( .DIN1(troj77_0counter_0_), .DIN2(Trigger_en0_0), .Q(troj77_0n7) );
+  and3s1 troj77_0U5 ( .DIN1(troj77_0n1), .DIN2(troj77_0n2), .DIN3(troj77_0counter_0_), .Q(troj77_0N4) );
+  hi1s1 troj77_0U6 ( .DIN(troj77_0n4), .Q(troj77_0n2) );
+  xor2s1 troj77_0U7 ( .DIN1(troj77_0n3), .DIN2(troj77_0n4), .Q(troj77_0N2) );
+  nnd2s1 troj77_0U8 ( .DIN1(troj77_0counter_0_), .DIN2(troj77_0n1), .Q(troj77_0n3) );
+  xor2s1 troj77_0U9 ( .DIN1(troj77_0n1), .DIN2(troj77_0counter_0_), .Q(troj77_0N1) );
+  hi1s1 troj77_0U10 ( .DIN(troj77_0n5), .Q(troj77_0n1) );
+
+    xor2s1 trojan77_0  (.DIN1(tempn2186), .DIN2(Trojan_out0), .Q(n2186) );
+
+----------------------------------

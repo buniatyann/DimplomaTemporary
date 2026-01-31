@@ -1,0 +1,40 @@
+s15850_T219 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+n1711
+n1412
+Activation Condition: The Trojan is triggered by the following internal signals...
+n1327 n850 n932 n605 n2091 n843 n1643 n741 n882 n1026 n1803
+n604 n601 n984 n2141 n722 n1724 n1792 n2399 n2217 n2268 g7321 n2854 n2190 n1839 n2171
+****************************************************************
+TROJAN BODY: 
+  i1s1 troj19_0U1 ( .DIN(troj19_0n1), .Q(Trigger_en19_0) );
+  or5s1 troj19_0U2 ( .DIN1(n605), .DIN2(n2091), .DIN3(n1643), .DIN4(troj19_0n2), .DIN5(troj19_0n3),         .Q(troj19_0n1) );
+  nnd4s1 troj19_0U3 ( .DIN1(n932), .DIN2(n882), .DIN3(troj19_0n4), .DIN4(n1803), .Q(troj19_0n3) );
+  nor2s1 troj19_0U4 ( .DIN1(n1327), .DIN2(troj19_0n5), .Q(troj19_0n4) );
+  i1s1 troj19_0U5 ( .DIN(n1026), .Q(troj19_0n5) );
+  or3s1 troj19_0U6 ( .DIN1(n850), .DIN2(n843), .DIN3(n741), .Q(troj19_0n2) );
+
+    xor2s1 trojan19_0  (.DIN1(tempn1711), .DIN2(Trigger_en19_0), .Q(n1711) );
+
+----------------------------------
+  and2s1 troj19_1U1 ( .DIN1(troj19_1n1), .DIN2(troj19_1n2), .Q(Trigger_en19_1) );
+  nor2s1 troj19_1U2 ( .DIN1(troj19_1n3), .DIN2(troj19_1n4), .Q(troj19_1n2) );
+  or4s1 troj19_1U3 ( .DIN1(n2141), .DIN2(troj19_1n5), .DIN3(n2854), .DIN4(n2217), .Q(troj19_1n4) );
+  i1s1 troj19_1U4 ( .DIN(g7321), .Q(troj19_1n5) );
+  or4s1 troj19_1U5 ( .DIN1(n604), .DIN2(n601), .DIN3(n984), .DIN4(n722), .Q(troj19_1n3) );
+  and4s1 troj19_1U6 ( .DIN1(n2268), .DIN2(n2190), .DIN3(n2399), .DIN4(troj19_1n6), .Q(troj19_1n1) );
+  and4s1 troj19_1U7 ( .DIN1(n2171), .DIN2(n1839), .DIN3(n1792), .DIN4(n1724), .Q(troj19_1n6)         );
+
+    xor2s1 trojan19_1  (.DIN1(tempn1412), .DIN2(Trigger_en19_1), .Q(n1412) );
+
+----------------------------------

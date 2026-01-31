@@ -1,0 +1,36 @@
+s15850_T410 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: counter with 4 states
+
+Effect: The Trojan alters the following signal(s)...
+n1537
+Activation Condition: The Trojan is triggered by the following internal signals...
+n924 g8568 g8280 n1792 n2131 n887 n1424 n1048 n1057 g11468 n1565 n1535
+****************************************************************
+TROJAN BODY: 
+  nor5s1 trig48_0U1 ( .DIN1(trig48_0n1), .DIN2(trig48_0n2), .DIN3(n1057), .DIN4(n1535), .DIN5(n1424),         .Q(Trigger_en0_0) );
+  or3s1 trig48_0U2 ( .DIN1(n924), .DIN2(n2131), .DIN3(n1565), .Q(trig48_0n2) );
+  nnd4s1 trig48_0U3 ( .DIN1(g11468), .DIN2(trig48_0n3), .DIN3(g8280), .DIN4(trig48_0n4), .Q(trig48_0n1) );
+  and3s1 trig48_0U4 ( .DIN1(n1792), .DIN2(g8568), .DIN3(n887), .Q(trig48_0n4) );
+  i1s1 trig48_0U5 ( .DIN(n1048), .Q(trig48_0n3) );
+
+
+----------------------------------
+  dffs2 troj10_0counter_reg_0_ ( .DIN(troj10_0n2), .CLK(CK), .Q(troj10_0counter_0_) );
+  dffles2 troj10_0counter_reg_1_ ( .DIN(troj10_0N1), .EB(troj10_0n1), .CLK(CK), .Q(troj10_0counter_1_) );
+  dffcs2 troj10_0Trojan_out0_reg ( .CLRB(troj10_0counter_0_), .DIN(troj10_0counter_1_), .CLK(CK), .Q(        Trojan_out0) );
+  hi1s1 troj10_0U3 ( .DIN(Trigger_en0_0), .Q(troj10_0n1) );
+  xor2s1 troj10_0U4 ( .DIN1(troj10_0counter_0_), .DIN2(Trigger_en0_0), .Q(troj10_0n2) );
+  xor2s1 troj10_0U5 ( .DIN1(troj10_0counter_1_), .DIN2(troj10_0counter_0_), .Q(troj10_0N1) );
+
+    xor2s1 trojan10_0  (.DIN1(tempn1537), .DIN2(Trojan_out0), .Q(n1537) );
+
+----------------------------------

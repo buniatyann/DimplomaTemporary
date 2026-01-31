@@ -1,0 +1,41 @@
+s13207_T470 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: FSM with 1 triggers and state transition:
+      1->2->0
+
+Effect: The Trojan alters the following signal(s)...
+g9085
+Activation Condition: The Trojan is triggered by the following internal signals...
+n757 n718 n1107 n1604 n677 g7101 n1650 n1321 n1500 n1253
+****************************************************************
+TROJAN BODY: 
+  nor2s1 trig216_0U1 ( .DIN1(trig216_0n1), .DIN2(trig216_0n2), .Q(Trigger_en0_0) );
+  or2s1 trig216_0U2 ( .DIN1(trig216_0n3), .DIN2(trig216_0n4), .Q(trig216_0n2) );
+  nnd2s1 trig216_0U3 ( .DIN1(n1321), .DIN2(n1253), .Q(trig216_0n4) );
+  nnd2s1 trig216_0U4 ( .DIN1(trig216_0n5), .DIN2(g7101), .Q(trig216_0n3) );
+  nor2s1 trig216_0U5 ( .DIN1(n1500), .DIN2(n1107), .Q(trig216_0n5) );
+  nnd3s1 trig216_0U6 ( .DIN1(trig216_0n6), .DIN2(trig216_0n7), .DIN3(trig216_0n8), .Q(trig216_0n1) );
+  nor2s1 trig216_0U7 ( .DIN1(n1650), .DIN2(n1604), .Q(trig216_0n8) );
+  i1s1 trig216_0U8 ( .DIN(n677), .Q(trig216_0n7) );
+  nor2s1 trig216_0U9 ( .DIN1(n757), .DIN2(n718), .Q(trig216_0n6) );
+
+
+----------------------------------
+  dffles2 troj70_0state_reg_1_ ( .DIN(troj70_01'b0), .EB(troj70_0n5), .CLK(CK), .Q(troj70_0state_1_), .QN(troj70_0n2) );
+  dffles2 troj70_0Trojan_out0_reg ( .DIN(troj70_0n2), .EB(troj70_0n3), .CLK(CK), .Q(Trojan_out0) );
+  ib1s2 troj70_0U5 ( .DIN(troj70_0N15), .Q(troj70_0n5) );
+  nor2s2 troj70_0U6 ( .DIN1(troj70_0n3), .DIN2(troj70_0n4), .Q(troj70_0N15) );
+  ib1s2 troj70_0U8 ( .DIN(Trigger_en0_0), .Q(troj70_0n3) );
+  ib1s2 troj70_0U9 ( .DIN(troj70_0state_1_), .Q(troj70_0n4) );
+
+    xor2s1 trojan70_0  (.DIN1(tempg9085), .DIN2(Trojan_out0), .Q(g9085) );
+
+----------------------------------

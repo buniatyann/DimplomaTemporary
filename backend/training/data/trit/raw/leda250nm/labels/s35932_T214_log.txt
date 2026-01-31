@@ -1,0 +1,40 @@
+s35932_T214 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+n2692
+n2901
+Activation Condition: The Trojan is triggered by the following internal signals...
+n1833 n6583 n4722 n4481 n4695 n2940 n4208 n2049 n1744 n4658 n1918 n1731 n3773
+n4948 n4241 n4208 n4107 n4681 n3538 n2785 n2052 n4109 n3621
+****************************************************************
+TROJAN BODY: 
+  and2s1 troj14_0U1 ( .DIN1(troj14_0n1), .DIN2(troj14_0n2), .Q(Trigger_en14_0) );
+  nor5s1 troj14_0U2 ( .DIN1(troj14_0n3), .DIN2(n4722), .DIN3(n4695), .DIN4(n4658), .DIN5(n4481), .Q(troj14_0n2) );
+  or3s1 troj14_0U3 ( .DIN1(n3773), .DIN2(n2940), .DIN3(n2049), .Q(troj14_0n3) );
+  nor4s1 troj14_0U4 ( .DIN1(troj14_0n4), .DIN2(n1744), .DIN3(n1918), .DIN4(n1833), .Q(troj14_0n1) );
+  nnd2s1 troj14_0U5 ( .DIN1(troj14_0n5), .DIN2(n6583), .Q(troj14_0n4) );
+  nor2s1 troj14_0U6 ( .DIN1(n1731), .DIN2(troj14_0n6), .Q(troj14_0n5) );
+  i1s1 troj14_0U7 ( .DIN(n4208), .Q(troj14_0n6) );
+
+    xor2s1 trojan14_0  (.DIN1(tempn2692), .DIN2(Trigger_en14_0), .Q(n2692) );
+
+----------------------------------
+  nor4s1 troj14_1U1 ( .DIN1(troj14_1n1), .DIN2(troj14_1n2), .DIN3(troj14_1n3), .DIN4(troj14_1n4), .Q(Trigger_en14_1)         );
+  nnd2s1 troj14_1U2 ( .DIN1(n3621), .DIN2(n2785), .Q(troj14_1n4) );
+  i1s1 troj14_1U3 ( .DIN(n4107), .Q(troj14_1n3) );
+  nnd2s1 troj14_1U4 ( .DIN1(n4948), .DIN2(n4208), .Q(troj14_1n2) );
+  or4s1 troj14_1U5 ( .DIN1(n3538), .DIN2(n2052), .DIN3(n4109), .DIN4(troj14_1n5), .Q(troj14_1n1) );
+  or2s1 troj14_1U6 ( .DIN1(n4681), .DIN2(n4241), .Q(troj14_1n5) );
+
+    xor2s1 trojan14_1  (.DIN1(tempn2901), .DIN2(Trigger_en14_1), .Q(n2901) );
+
+----------------------------------

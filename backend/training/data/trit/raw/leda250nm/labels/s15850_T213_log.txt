@@ -1,0 +1,40 @@
+s15850_T213 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+n1490
+n1541
+Activation Condition: The Trojan is triggered by the following internal signals...
+n706 n1241 n1789 n1569 n2165 n1378 n1476 g7772 n2224 n1044 n808 g6803 n2184 n1341 g7346 n2169
+g8422 n2484 n1044 n592 n1617 g8278 n1799 n1544 n854 n1899 n920 g7772 n737 n2195 n2116
+****************************************************************
+TROJAN BODY: 
+  nor2s1 troj13_0U1 ( .DIN1(troj13_0n1), .DIN2(troj13_0n2), .Q(Trigger_en13_0) );
+  or5s1 troj13_0U2 ( .DIN1(g6803), .DIN2(troj13_0n3), .DIN3(g7772), .DIN4(g7346), .DIN5(troj13_0n4),         .Q(troj13_0n2) );
+  or4s1 troj13_0U3 ( .DIN1(n1241), .DIN2(n1044), .DIN3(n1378), .DIN4(n1341), .Q(troj13_0n4) );
+  i1s1 troj13_0U4 ( .DIN(n706), .Q(troj13_0n3) );
+  or5s1 troj13_0U5 ( .DIN1(n1569), .DIN2(n1476), .DIN3(n2165), .DIN4(n1789), .DIN5(troj13_0n5),         .Q(troj13_0n1) );
+  or4s1 troj13_0U6 ( .DIN1(n2184), .DIN2(n2169), .DIN3(n808), .DIN4(n2224), .Q(troj13_0n5) );
+
+    xor2s1 trojan13_0  (.DIN1(tempn1490), .DIN2(Trigger_en13_0), .Q(n1490) );
+
+----------------------------------
+  and3s1 troj13_1U1 ( .DIN1(troj13_1n1), .DIN2(troj13_1n2), .DIN3(troj13_1n3), .Q(Trigger_en13_1) );
+  nor5s1 troj13_1U2 ( .DIN1(troj13_1n4), .DIN2(n1544), .DIN3(n1044), .DIN4(g7772), .DIN5(troj13_1n5),         .Q(troj13_1n3) );
+  i1s1 troj13_1U3 ( .DIN(g8278), .Q(troj13_1n5) );
+  i1s1 troj13_1U4 ( .DIN(troj13_1n6), .Q(troj13_1n4) );
+  and3s1 troj13_1U5 ( .DIN1(n1799), .DIN2(g8422), .DIN3(n920), .Q(troj13_1n6) );
+  nor4s1 troj13_1U6 ( .DIN1(n854), .DIN2(n737), .DIN3(n592), .DIN4(n2484), .Q(troj13_1n2) );
+  nor4s1 troj13_1U7 ( .DIN1(n2195), .DIN2(n2116), .DIN3(n1899), .DIN4(n1617), .Q(troj13_1n1)         );
+
+    xor2s1 trojan13_1  (.DIN1(tempn1541), .DIN2(Trigger_en13_1), .Q(n1541) );
+
+----------------------------------

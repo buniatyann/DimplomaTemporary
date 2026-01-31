@@ -1,0 +1,40 @@
+s1423_T201 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+n214
+n219
+Activation Condition: The Trojan is triggered by the following internal signals...
+n174 G613 n80 n289 n212 n283 n222 G175 n189 n386 G705 n153 n226 n87 G608 n112
+n127 n147 n144 G175 n100 n202 n283 n116 n162 n330 n102
+****************************************************************
+TROJAN BODY: 
+  nor4s1 troj1_0U1 ( .DIN1(troj1_0n1), .DIN2(troj1_0n2), .DIN3(troj1_0n3), .DIN4(troj1_0n4), .Q(Trigger_en1_0) );
+  nnd4s1 troj1_0U2 ( .DIN1(n80), .DIN2(n289), .DIN3(n283), .DIN4(G705), .Q(troj1_0n4) );
+  or4s1 troj1_0U3 ( .DIN1(G608), .DIN2(troj1_0n5), .DIN3(n112), .DIN4(G613), .Q(troj1_0n3) );
+  i1s1 troj1_0U4 ( .DIN(G175), .Q(troj1_0n5) );
+  or4s1 troj1_0U5 ( .DIN1(n174), .DIN2(n153), .DIN3(n212), .DIN4(n189), .Q(troj1_0n2) );
+  or4s1 troj1_0U6 ( .DIN1(n226), .DIN2(n222), .DIN3(n87), .DIN4(n386), .Q(troj1_0n1) );
+
+    xor2s1 trojan1_0  (.DIN1(tempn214), .DIN2(Trigger_en1_0), .Q(n214) );
+
+----------------------------------
+  nor5s1 troj1_1U1 ( .DIN1(troj1_1n1), .DIN2(troj1_1n2), .DIN3(n116), .DIN4(n144), .DIN5(n127), .Q(        Trigger_en1_1) );
+  nnd2s1 troj1_1U2 ( .DIN1(troj1_1n3), .DIN2(troj1_1n4), .Q(troj1_1n2) );
+  i1s1 troj1_1U3 ( .DIN(n147), .Q(troj1_1n4) );
+  nor2s1 troj1_1U4 ( .DIN1(n330), .DIN2(n162), .Q(troj1_1n3) );
+  or4s1 troj1_1U5 ( .DIN1(n102), .DIN2(n100), .DIN3(troj1_1n5), .DIN4(troj1_1n6), .Q(troj1_1n1) );
+  nnd2s1 troj1_1U6 ( .DIN1(n283), .DIN2(n202), .Q(troj1_1n6) );
+  i1s1 troj1_1U7 ( .DIN(G175), .Q(troj1_1n5) );
+
+    xor2s1 trojan1_1  (.DIN1(tempn219), .DIN2(Trigger_en1_1), .Q(n219) );
+
+----------------------------------

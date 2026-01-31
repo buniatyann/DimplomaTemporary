@@ -1,0 +1,40 @@
+s13207_T214 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+n1263
+n1164
+Activation Condition: The Trojan is triggered by the following internal signals...
+n783 n647 g9111 n1584 n796 g5183 g5187 n1976 n1115 n955 g6357 g6319 n1196 n742
+n1007 g5165 n1005 n1489 g5184 g7756 n1196 n1139 n1345 n1186 n834 n1336 n1787 g7520
+****************************************************************
+TROJAN BODY: 
+  nor2s1 troj14_0U1 ( .DIN1(troj14_0n1), .DIN2(troj14_0n2), .Q(Trigger_en14_0) );
+  or5s1 troj14_0U2 ( .DIN1(g6357), .DIN2(g6319), .DIN3(troj14_0n3), .DIN4(troj14_0n4), .DIN5(troj14_0n5), .Q(troj14_0n2) );
+  nnd2s1 troj14_0U3 ( .DIN1(g5187), .DIN2(g5183), .Q(troj14_0n5) );
+  i1s1 troj14_0U4 ( .DIN(n1196), .Q(troj14_0n4) );
+  or2s1 troj14_0U5 ( .DIN1(n1115), .DIN2(g9111), .Q(troj14_0n3) );
+  or5s1 troj14_0U6 ( .DIN1(n783), .DIN2(n742), .DIN3(n955), .DIN4(n796), .DIN5(troj14_0n6),         .Q(troj14_0n1) );
+  or3s1 troj14_0U7 ( .DIN1(n647), .DIN2(n1976), .DIN3(n1584), .Q(troj14_0n6) );
+
+    xor2s1 trojan14_0  (.DIN1(tempn1263), .DIN2(Trigger_en14_0), .Q(n1263) );
+
+----------------------------------
+  nor5s1 troj14_1U1 ( .DIN1(troj14_1n1), .DIN2(troj14_1n2), .DIN3(troj14_1n3), .DIN4(g5184), .DIN5(troj14_1n4), .Q(        Trigger_en14_1) );
+  i1s1 troj14_1U2 ( .DIN(troj14_1n5), .Q(troj14_1n4) );
+  nor2s1 troj14_1U3 ( .DIN1(n1007), .DIN2(n1005), .Q(troj14_1n5) );
+  or4s1 troj14_1U4 ( .DIN1(n1489), .DIN2(n1336), .DIN3(n834), .DIN4(n1787), .Q(troj14_1n3) );
+  nnd3s1 troj14_1U5 ( .DIN1(n1196), .DIN2(n1186), .DIN3(n1345), .Q(troj14_1n2) );
+  nnd4s1 troj14_1U6 ( .DIN1(n1139), .DIN2(g7756), .DIN3(g7520), .DIN4(g5165), .Q(troj14_1n1)         );
+
+    xor2s1 trojan14_1  (.DIN1(tempn1164), .DIN2(Trigger_en14_1), .Q(n1164) );
+
+----------------------------------

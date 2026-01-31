@@ -1,0 +1,27 @@
+c5315_T034 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+N7465
+Activation Condition: The Trojan is triggered by the following internal signals...
+N5257 N5620 N2877 N3007 N3200 N1525 N7342 N2711 N4987 N5282 N6975
+****************************************************************
+TROJAN BODY: 
+  nor5s1 troj34_0U1 ( .DIN1(troj34_0n1), .DIN2(troj34_0n2), .DIN3(N3007), .DIN4(N5257), .DIN5(N3200),         .Q(Trigger_en34_0) );
+  or3s1 troj34_0U2 ( .DIN1(N6975), .DIN2(N5620), .DIN3(N5282), .Q(troj34_0n2) );
+  nnd2s1 troj34_0U3 ( .DIN1(troj34_0n3), .DIN2(troj34_0n4), .Q(troj34_0n1) );
+  and2s1 troj34_0U4 ( .DIN1(troj34_0n5), .DIN2(N2711), .Q(troj34_0n4) );
+  nor2s1 troj34_0U5 ( .DIN1(N2877), .DIN2(N1525), .Q(troj34_0n5) );
+  and2s1 troj34_0U6 ( .DIN1(N7342), .DIN2(N4987), .Q(troj34_0n3) );
+
+    xor2s1 trojan34_0  (.DIN1(tempN7465), .DIN2(Trigger_en34_0), .Q(N7465) );
+
+----------------------------------

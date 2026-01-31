@@ -1,0 +1,40 @@
+c6288_T200 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+N5700
+N6267
+Activation Condition: The Trojan is triggered by the following internal signals...
+N2995 N2573 N4189 N3338 N2668 N1482 N5629 N2037 N3730 N5388
+N4340 N4077 N6165 N2222 N1506 N2008 N2386 N4440 N2251 N4232 N3151 N3826 N5249 N2254 N6196
+****************************************************************
+TROJAN BODY: 
+  nor2s1 troj0_0U1 ( .DIN1(troj0_0n1), .DIN2(troj0_0n2), .Q(Trigger_en0_0) );
+  nnd4s1 troj0_0U2 ( .DIN1(N5629), .DIN2(N5388), .DIN3(troj0_0n3), .DIN4(N4189), .Q(troj0_0n2) );
+  and2s1 troj0_0U3 ( .DIN1(N3730), .DIN2(N3338), .Q(troj0_0n3) );
+  nnd4s1 troj0_0U4 ( .DIN1(N2995), .DIN2(N2668), .DIN3(troj0_0n4), .DIN4(N2573), .Q(troj0_0n1) );
+  and2s1 troj0_0U5 ( .DIN1(N2037), .DIN2(N1482), .Q(troj0_0n4) );
+
+    xor2s1 trojan0_0  (.DIN1(tempN5700), .DIN2(Trigger_en0_0), .Q(N5700) );
+
+----------------------------------
+  nor4s1 troj0_1U1 ( .DIN1(troj0_1n1), .DIN2(troj0_1n2), .DIN3(troj0_1n3), .DIN4(troj0_1n4), .Q(Trigger_en0_1) );
+  nnd3s1 troj0_1U2 ( .DIN1(N6165), .DIN2(N5249), .DIN3(N6196), .Q(troj0_1n4) );
+  nnd3s1 troj0_1U3 ( .DIN1(N4440), .DIN2(N4340), .DIN3(troj0_1n5), .Q(troj0_1n3) );
+  and2s1 troj0_1U4 ( .DIN1(N4232), .DIN2(N4077), .Q(troj0_1n5) );
+  nnd3s1 troj0_1U5 ( .DIN1(N3826), .DIN2(N3151), .DIN3(troj0_1n6), .Q(troj0_1n2) );
+  and2s1 troj0_1U6 ( .DIN1(N2386), .DIN2(N2254), .Q(troj0_1n6) );
+  nnd3s1 troj0_1U7 ( .DIN1(N2251), .DIN2(N2222), .DIN3(troj0_1n7), .Q(troj0_1n1) );
+  and2s1 troj0_1U8 ( .DIN1(N2008), .DIN2(N1506), .Q(troj0_1n7) );
+
+    xor2s1 trojan0_1  (.DIN1(tempN6267), .DIN2(Trigger_en0_1), .Q(N6267) );
+
+----------------------------------

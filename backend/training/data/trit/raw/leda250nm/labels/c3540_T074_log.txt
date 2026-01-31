@@ -1,0 +1,25 @@
+c3540_T074 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+n1003
+Activation Condition: The Trojan is triggered by the following internal signals...
+n969 n986 n1587 n1610 n661 n717 n871 n1413 n1494 n1484
+****************************************************************
+TROJAN BODY: 
+  and4s1 troj74_0U1 ( .DIN1(n986), .DIN2(n969), .DIN3(troj74_0n1), .DIN4(troj74_0n2), .Q(        Trigger_en74_0) );
+  and4s1 troj74_0U2 ( .DIN1(n1587), .DIN2(n1494), .DIN3(troj74_0n3), .DIN4(n1484), .Q(troj74_0n2) );
+  nor2s1 troj74_0U3 ( .DIN1(n1610), .DIN2(n1413), .Q(troj74_0n3) );
+  and3s1 troj74_0U4 ( .DIN1(n717), .DIN2(n661), .DIN3(n871), .Q(troj74_0n1) );
+
+    xor2s1 trojan74_0  (.DIN1(tempn1003), .DIN2(Trigger_en74_0), .Q(n1003) );
+
+----------------------------------

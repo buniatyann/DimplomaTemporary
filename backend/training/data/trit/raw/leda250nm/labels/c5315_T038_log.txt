@@ -1,0 +1,25 @@
+c5315_T038 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+N8041
+Activation Condition: The Trojan is triggered by the following internal signals...
+N6913 N6077 N6034 N2840 N2722 N7906 N3787 N3655 N6353 N5073
+****************************************************************
+TROJAN BODY: 
+  and4s1 troj38_0U1 ( .DIN1(N6913), .DIN2(N6353), .DIN3(troj38_0n1), .DIN4(troj38_0n2), .Q(        Trigger_en38_0) );
+  and4s1 troj38_0U2 ( .DIN1(N3787), .DIN2(N3655), .DIN3(troj38_0n3), .DIN4(N2840), .Q(troj38_0n2) );
+  nor2s1 troj38_0U3 ( .DIN1(N7906), .DIN2(N2722), .Q(troj38_0n3) );
+  and3s1 troj38_0U4 ( .DIN1(N6034), .DIN2(N5073), .DIN3(N6077), .Q(troj38_0n1) );
+
+    xor2s1 trojan38_0  (.DIN1(tempN8041), .DIN2(Trigger_en38_0), .Q(N8041) );
+
+----------------------------------

@@ -1,0 +1,38 @@
+s13207_T211 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+n1896
+g9094
+Activation Condition: The Trojan is triggered by the following internal signals...
+n1740 n1542 n1317 g7761 n837 g6852 n714 n1783 n1321 n724 n2298 g7522 g6342 n985 n785 n671 n1763 g6379
+n888 n923 n1758 n1308 n1598 n1578 n1626 n1779 n1703 n1654
+****************************************************************
+TROJAN BODY: 
+  nor5s1 troj11_0U1 ( .DIN1(troj11_0n1), .DIN2(troj11_0n2), .DIN3(troj11_0n3), .DIN4(g6379), .DIN5(g6342), .Q(        Trigger_en11_0) );
+  nnd2s1 troj11_0U2 ( .DIN1(g7522), .DIN2(g6852), .Q(troj11_0n3) );
+  or5s1 troj11_0U3 ( .DIN1(n785), .DIN2(n724), .DIN3(n714), .DIN4(n671), .DIN5(n1317),         .Q(troj11_0n2) );
+  i1s1 troj11_0U4 ( .DIN(troj11_0n4), .Q(troj11_0n1) );
+  and4s1 troj11_0U5 ( .DIN1(n1763), .DIN2(n1740), .DIN3(troj11_0n5), .DIN4(troj11_0n6), .Q(troj11_0n4) );
+  and4s1 troj11_0U6 ( .DIN1(n985), .DIN2(n837), .DIN3(n2298), .DIN4(n1783), .Q(troj11_0n6) );
+  and3s1 troj11_0U7 ( .DIN1(n1321), .DIN2(g7761), .DIN3(n1542), .Q(troj11_0n5) );
+
+    xor2s1 trojan11_0  (.DIN1(tempn1896), .DIN2(Trigger_en11_0), .Q(n1896) );
+
+----------------------------------
+  nor2s1 troj11_1U1 ( .DIN1(troj11_1n1), .DIN2(troj11_1n2), .Q(Trigger_en11_1) );
+  nnd4s1 troj11_1U2 ( .DIN1(n888), .DIN2(n1758), .DIN3(troj11_1n3), .DIN4(n1308), .Q(troj11_1n2) );
+  nor2s1 troj11_1U3 ( .DIN1(n1598), .DIN2(n1578), .Q(troj11_1n3) );
+  or5s1 troj11_1U4 ( .DIN1(n923), .DIN2(n1779), .DIN3(n1703), .DIN4(n1654), .DIN5(        n1626), .Q(troj11_1n1) );
+
+    xor2s1 trojan11_1  (.DIN1(tempg9094), .DIN2(Trigger_en11_1), .Q(g9094) );
+
+----------------------------------

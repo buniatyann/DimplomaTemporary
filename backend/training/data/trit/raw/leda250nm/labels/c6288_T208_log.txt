@@ -1,0 +1,39 @@
+c6288_T208 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+N6270
+N6197
+Activation Condition: The Trojan is triggered by the following internal signals...
+N1179 N966 N3784 N3792 N3926 N3581 N6135 N3311 N5890 N570 N1221 N2374 N3603 N4922 N2544 N3015
+N4821 N6129 N5142 N1791 N5548 N4122 N1486 N3146 N6000 N3328
+****************************************************************
+TROJAN BODY: 
+  nor5s1 troj8_0U1 ( .DIN1(troj8_0n1), .DIN2(troj8_0n2), .DIN3(troj8_0n3), .DIN4(troj8_0n4), .DIN5(troj8_0n5), .Q(        Trigger_en8_0) );
+  nnd2s1 troj8_0U2 ( .DIN1(N2374), .DIN2(troj8_0n6), .Q(troj8_0n5) );
+  i1s1 troj8_0U3 ( .DIN(N1179), .Q(troj8_0n6) );
+  or2s1 troj8_0U4 ( .DIN1(N3311), .DIN2(N1221), .Q(troj8_0n4) );
+  or4s1 troj8_0U5 ( .DIN1(N570), .DIN2(N4922), .DIN3(N966), .DIN4(N6135), .Q(troj8_0n3) );
+  nnd4s1 troj8_0U6 ( .DIN1(N5890), .DIN2(N3926), .DIN3(N3792), .DIN4(N3784), .Q(troj8_0n2)         );
+  nnd4s1 troj8_0U7 ( .DIN1(N3603), .DIN2(N3581), .DIN3(N3015), .DIN4(N2544), .Q(troj8_0n1)         );
+
+    xor2s1 trojan8_0  (.DIN1(tempN6270), .DIN2(Trigger_en8_0), .Q(N6270) );
+
+----------------------------------
+  nor2s1 troj8_1U1 ( .DIN1(troj8_1n1), .DIN2(troj8_1n2), .Q(Trigger_en8_1) );
+  nnd4s1 troj8_1U2 ( .DIN1(N6129), .DIN2(N6000), .DIN3(troj8_1n3), .DIN4(N5548), .Q(troj8_1n2) );
+  and2s1 troj8_1U3 ( .DIN1(N5142), .DIN2(N4821), .Q(troj8_1n3) );
+  nnd4s1 troj8_1U4 ( .DIN1(N4122), .DIN2(N3328), .DIN3(troj8_1n4), .DIN4(N3146), .Q(troj8_1n1) );
+  and2s1 troj8_1U5 ( .DIN1(N1791), .DIN2(N1486), .Q(troj8_1n4) );
+
+    xor2s1 trojan8_1  (.DIN1(tempN6197), .DIN2(Trigger_en8_1), .Q(N6197) );
+
+----------------------------------

@@ -1,0 +1,39 @@
+s35932_T200 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+n3417
+n3123
+Activation Condition: The Trojan is triggered by the following internal signals...
+n1903 n2085 n4233 n6735 n1758 n3934 n4741 n3702 n3621 n3647 n1902 n2530 n2247 n1907
+n3476 n3824 n1896 n2803 n4708 n2053 n6603 n4139 n4107 n4204
+****************************************************************
+TROJAN BODY: 
+  nor5s1 troj0_0U1 ( .DIN1(troj0_0n1), .DIN2(troj0_0n2), .DIN3(n1902), .DIN4(n1907), .DIN5(n1903),         .Q(Trigger_en0_0) );
+  or4s1 troj0_0U2 ( .DIN1(n2247), .DIN2(n2085), .DIN3(n3702), .DIN4(n3647), .Q(troj0_0n2) );
+  or4s1 troj0_0U3 ( .DIN1(n1758), .DIN2(troj0_0n3), .DIN3(troj0_0n4), .DIN4(troj0_0n5), .Q(troj0_0n1) );
+  nnd3s1 troj0_0U4 ( .DIN1(n4741), .DIN2(n4233), .DIN3(n6735), .Q(troj0_0n5) );
+  nnd2s1 troj0_0U5 ( .DIN1(n3934), .DIN2(n3621), .Q(troj0_0n4) );
+  i1s1 troj0_0U6 ( .DIN(n2530), .Q(troj0_0n3) );
+
+    xor2s1 trojan0_0  (.DIN1(tempn3417), .DIN2(Trigger_en0_0), .Q(n3417) );
+
+----------------------------------
+  and4s1 troj0_1U1 ( .DIN1(n6603), .DIN2(n4204), .DIN3(troj0_1n1), .DIN4(troj0_1n2), .Q(        Trigger_en0_1) );
+  nor5s1 troj0_1U2 ( .DIN1(n1896), .DIN2(troj0_1n3), .DIN3(n2053), .DIN4(n4708), .DIN5(n3476), .Q(troj0_1n2) );
+  i1s1 troj0_1U3 ( .DIN(n2803), .Q(troj0_1n3) );
+  nor2s1 troj0_1U4 ( .DIN1(troj0_1n4), .DIN2(troj0_1n5), .Q(troj0_1n1) );
+  nnd2s1 troj0_1U5 ( .DIN1(n4107), .DIN2(n3824), .Q(troj0_1n5) );
+  i1s1 troj0_1U6 ( .DIN(n4139), .Q(troj0_1n4) );
+
+    xor2s1 trojan0_1  (.DIN1(tempn3123), .DIN2(Trigger_en0_1), .Q(n3123) );
+
+----------------------------------

@@ -1,0 +1,36 @@
+s1423_T212 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: combinational
+Effect: The Trojan alters the following signal(s)...
+n248
+n220
+Activation Condition: The Trojan is triggered by the following internal signals...
+n385 n181 n229 n326 n323 n175 n340
+G573 n383 n289 n150 n228 n322 n144 n270 n315 n306 n241
+****************************************************************
+TROJAN BODY: 
+  nor5s1 troj12_0U1 ( .DIN1(troj12_0n1), .DIN2(n385), .DIN3(n340), .DIN4(n323), .DIN5(n229),         .Q(Trigger_en12_0) );
+  nnd3s1 troj12_0U2 ( .DIN1(n181), .DIN2(troj12_0n2), .DIN3(n326), .Q(troj12_0n1) );
+  i1s1 troj12_0U3 ( .DIN(n175), .Q(troj12_0n2) );
+
+    xor2s1 trojan12_0  (.DIN1(tempn248), .DIN2(Trigger_en12_0), .Q(n248) );
+
+----------------------------------
+  nor2s1 troj12_1U1 ( .DIN1(troj12_1n1), .DIN2(troj12_1n2), .Q(Trigger_en12_1) );
+  nnd4s1 troj12_1U2 ( .DIN1(n289), .DIN2(n270), .DIN3(troj12_1n3), .DIN4(n150), .Q(troj12_1n2) );
+  nor2s1 troj12_1U3 ( .DIN1(n144), .DIN2(G573), .Q(troj12_1n3) );
+  or5s1 troj12_1U4 ( .DIN1(n306), .DIN2(n241), .DIN3(n228), .DIN4(n315), .DIN5(troj12_1n4),         .Q(troj12_1n1) );
+  i1s1 troj12_1U5 ( .DIN(troj12_1n5), .Q(troj12_1n4) );
+  nor2s1 troj12_1U6 ( .DIN1(n383), .DIN2(n322), .Q(troj12_1n5) );
+
+    xor2s1 trojan12_1  (.DIN1(tempn220), .DIN2(Trigger_en12_1), .Q(n220) );
+
+----------------------------------

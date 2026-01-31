@@ -1,0 +1,50 @@
+s35932_T619 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 2
+Type: counter with 7 states
+      & combinational
+Effect: The Trojan alters the following signal(s)...
+n3515
+n3686
+Activation Condition: The Trojan is triggered by the following internal signals...
+n4610 n4652 n4442 n2835 n3900 n4502 n4346 n3908
+n3589 n6655 n3357 n2148 n1806 n3034 n6646 n2784 n4868 n1815 n2689
+****************************************************************
+TROJAN BODY: 
+  nor5s1 trig60_0U1 ( .DIN1(trig60_0n1), .DIN2(n4346), .DIN3(n3908), .DIN4(n3900), .DIN5(n2835), .Q(Trigger_en0_0) );
+  or4s1 trig60_0U2 ( .DIN1(n4502), .DIN2(n4442), .DIN3(n4652), .DIN4(n4610), .Q(trig60_0n1) );
+
+
+----------------------------------
+  dffs2 troj19_0counter_reg_0_ ( .DIN(troj19_0n7), .CLK(CK), .Q(troj19_0counter_0_) );
+  dffles2 troj19_0counter_reg_1_ ( .DIN(troj19_0N1), .EB(troj19_0n6), .CLK(CK), .QN(troj19_0n5) );
+  dffles2 troj19_0counter_reg_2_ ( .DIN(troj19_0N2), .EB(troj19_0n6), .CLK(CK), .QN(troj19_0n4) );
+  dffs2 troj19_0Trojan_out0_reg ( .DIN(troj19_0N4), .CLK(CK), .Q(Trojan_out0) );
+  hi1s1 troj19_0U3 ( .DIN(Trigger_en0_0), .Q(troj19_0n6) );
+  xor2s1 troj19_0U4 ( .DIN1(troj19_0counter_0_), .DIN2(Trigger_en0_0), .Q(troj19_0n7) );
+  and3s1 troj19_0U5 ( .DIN1(troj19_0n1), .DIN2(troj19_0n2), .DIN3(troj19_0counter_0_), .Q(troj19_0N4) );
+  hi1s1 troj19_0U6 ( .DIN(troj19_0n4), .Q(troj19_0n2) );
+  xor2s1 troj19_0U7 ( .DIN1(troj19_0n3), .DIN2(troj19_0n4), .Q(troj19_0N2) );
+  nnd2s1 troj19_0U8 ( .DIN1(troj19_0counter_0_), .DIN2(troj19_0n1), .Q(troj19_0n3) );
+  xor2s1 troj19_0U9 ( .DIN1(troj19_0n1), .DIN2(troj19_0counter_0_), .Q(troj19_0N1) );
+  hi1s1 troj19_0U10 ( .DIN(troj19_0n5), .Q(troj19_0n1) );
+
+    xor2s1 trojan19_0  (.DIN1(tempn3515), .DIN2(Trojan_out0), .Q(n3515) );
+
+----------------------------------
+  nor5s1 troj19_1U1 ( .DIN1(troj19_1n1), .DIN2(troj19_1n2), .DIN3(n2148), .DIN4(n6655), .DIN5(n2689),         .Q(Trigger_en1_19) );
+  nnd2s1 troj19_1U2 ( .DIN1(troj19_1n3), .DIN2(n2784), .Q(troj19_1n2) );
+  nor2s1 troj19_1U3 ( .DIN1(n1815), .DIN2(n1806), .Q(troj19_1n3) );
+  nnd4s1 troj19_1U4 ( .DIN1(n6646), .DIN2(n4868), .DIN3(troj19_1n4), .DIN4(n3589), .Q(troj19_1n1) );
+  and2s1 troj19_1U5 ( .DIN1(n3357), .DIN2(n3034), .Q(troj19_1n4) );
+
+    xor2s1 trojan19_1  (.DIN1(tempn3686), .DIN2(Trigger_en1_19), .Q(n3686) );
+
+----------------------------------

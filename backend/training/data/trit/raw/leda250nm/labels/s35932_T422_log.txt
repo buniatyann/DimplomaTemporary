@@ -1,0 +1,41 @@
+s35932_T422 LOG
+****************************************************************
+TRIT Generated Trojans
+Please cite the following if using the benchmark provided:
+J. Cruz, Y. Huang, P. Mishra, S. Bhunia, 
+"An Automated Configurable Trojan Insertion Framework for Dynamic Trust Benchmarks", DATE, 2018
+
+****************************************************************
+TROJAN STATS:
+Number of Trojans: 1
+Type: counter with 5 states
+
+Effect: The Trojan alters the following signal(s)...
+WX5836
+Activation Condition: The Trojan is triggered by the following internal signals...
+n4854 n4046 n2294 n1788 n2181 n1729 n4062 n2225 n3639 n1913
+****************************************************************
+TROJAN BODY: 
+  and4s1 trig69_0U1 ( .DIN1(n4854), .DIN2(trig69_0n1), .DIN3(trig69_0n2), .DIN4(trig69_0n3), .Q(Trigger_en0_0)         );
+  nor5s1 trig69_0U2 ( .DIN1(n2294), .DIN2(n2225), .DIN3(n3639), .DIN4(n4062), .DIN5(        n4046), .Q(trig69_0n3) );
+  nor3s1 trig69_0U3 ( .DIN1(n1788), .DIN2(n2181), .DIN3(n1913), .Q(trig69_0n2) );
+  i1s1 trig69_0U4 ( .DIN(n1729), .Q(trig69_0n1) );
+
+
+----------------------------------
+  dffs2 troj22_0counter_reg_0_ ( .DIN(troj22_0n7), .CLK(CK), .Q(troj22_0counter_0_) );
+  dffles2 troj22_0counter_reg_1_ ( .DIN(troj22_0N1), .EB(troj22_0n6), .CLK(CK), .QN(troj22_0n5) );
+  dffles2 troj22_0counter_reg_2_ ( .DIN(troj22_0N2), .EB(troj22_0n6), .CLK(CK), .QN(troj22_0n4) );
+  dffs2 troj22_0Trojan_out0_reg ( .DIN(troj22_0N4), .CLK(CK), .Q(Trojan_out0) );
+  hi1s1 troj22_0U3 ( .DIN(Trigger_en0_0), .Q(troj22_0n6) );
+  xor2s1 troj22_0U4 ( .DIN1(troj22_0counter_0_), .DIN2(Trigger_en0_0), .Q(troj22_0n7) );
+  and3s1 troj22_0U5 ( .DIN1(troj22_0n1), .DIN2(troj22_0n2), .DIN3(troj22_0counter_0_), .Q(troj22_0N4) );
+  hi1s1 troj22_0U6 ( .DIN(troj22_0n4), .Q(troj22_0n2) );
+  xor2s1 troj22_0U7 ( .DIN1(troj22_0n3), .DIN2(troj22_0n4), .Q(troj22_0N2) );
+  nnd2s1 troj22_0U8 ( .DIN1(troj22_0counter_0_), .DIN2(troj22_0n1), .Q(troj22_0n3) );
+  xor2s1 troj22_0U9 ( .DIN1(troj22_0n1), .DIN2(troj22_0counter_0_), .Q(troj22_0N1) );
+  hi1s1 troj22_0U10 ( .DIN(troj22_0n5), .Q(troj22_0n1) );
+
+    xor2s1 trojan22_0  (.DIN1(tempWX5836), .DIN2(Trojan_out0), .Q(WX5836) );
+
+----------------------------------
