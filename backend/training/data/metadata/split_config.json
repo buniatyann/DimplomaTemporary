@@ -1,0 +1,83 @@
+{
+    "training": {
+        "trojan_sources": [
+            {
+                "name": "trusthub_saed90",
+                "path": "trusthub/raw/saed90nm",
+                "pattern": "*-T*.v"
+            },
+            {
+                "name": "trit_tc_leda250",
+                "path": "trit/raw/leda250nm/trit_tc",
+                "pattern": "*_trojan_*.v"
+            },
+            {
+                "name": "trit_ts_leda250",
+                "path": "trit/raw/leda250nm/trit_ts",
+                "pattern": "*_trojan_*.v"
+            }
+        ],
+        "clean_sources": [
+            {
+                "name": "trusthub_golden",
+                "path": "trusthub/raw/saed90nm",
+                "pattern": "*_golden.v"
+            },
+            {
+                "name": "trit_golden",
+                "path": "trit/raw/leda250nm",
+                "pattern": "*_golden.v"
+            },
+            {
+                "name": "iscas85",
+                "path": "iscas/iscas85",
+                "pattern": "*.v"
+            },
+            {
+                "name": "iscas89",
+                "path": "iscas/iscas89",
+                "pattern": "*.v"
+            },
+            {
+                "name": "epfl",
+                "path": "epfl",
+                "pattern": "**/*.v"
+            }
+        ]
+    },
+    "validation": {
+        "split_ratio": 0.15,
+        "from_training": true
+    },
+    "verification": {
+        "trojan_sources": [
+            {
+                "name": "trusthub_leda250",
+                "path": "trusthub/raw/leda250nm",
+                "pattern": "*-T*.v"
+            },
+            {
+                "name": "trit_skywater130",
+                "path": "trit/raw/skywater130nm",
+                "pattern": "*_trojan_*.v"
+            }
+        ],
+        "clean_sources": [
+            {
+                "name": "trit_skywater_golden",
+                "path": "trit/raw/skywater130nm",
+                "pattern": "*_golden.v"
+            },
+            {
+                "name": "itc99",
+                "path": "itc99",
+                "pattern": "*.v"
+            },
+            {
+                "name": "opencores",
+                "path": "opencores",
+                "pattern": "**/*.v"
+            }
+        ]
+    }
+}
