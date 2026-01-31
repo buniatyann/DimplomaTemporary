@@ -119,12 +119,229 @@ TYPE_VOCAB = [
     "NOR", "XOR", "XNOR", "BUF", "MUX", "LATCH", "UNKNOWN",
 ]
 TYPE_TO_IDX = {t: i for i, t in enumerate(TYPE_VOCAB)}
-FEATURE_DIM = len(TYPE_VOCAB) + 4  # one-hot + fan_in + fan_out + depth + is_seq
+# Features: 15 one-hot gate type + 4 basic (fan_in, fan_out, depth, is_seq)
+#         + 7 structural (degree_centrality, is_io_adjacent, neighbor_type_entropy,
+#           rare_type_ratio, local_fanout_anomaly, min_dist_to_input, min_dist_to_output)
+FEATURE_DIM = len(TYPE_VOCAB) + 4 + 7
+
+VERILOG_KEYWORDS = frozenset({
+    "module", "endmodule", "input", "output", "inout", "wire", "reg",
+    "assign", "parameter", "localparam", "always", "initial", "begin",
+    "end", "if", "else", "case", "endcase", "for", "generate",
+    "endgenerate", "function", "endfunction", "task", "endtask",
+    "posedge", "negedge", "supply0", "supply1", "tri", "integer",
+})
+
+# Map cell library names to canonical gate types
+_CELL_TYPE_MAP: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"(?i)^dff"), "DFF"),
+    (re.compile(r"(?i)^latch"), "LATCH"),
+    (re.compile(r"(?i)^nnd|^nand"), "NAND"),
+    (re.compile(r"(?i)^nor"), "NOR"),
+    (re.compile(r"(?i)^xnor"), "XNOR"),
+    (re.compile(r"(?i)^xor"), "XOR"),
+    (re.compile(r"(?i)^and"), "AND"),
+    (re.compile(r"(?i)^or"), "OR"),
+    (re.compile(r"(?i)^hi1|^inv|^not"), "NOT"),
+    (re.compile(r"(?i)^buf|^clkbuf"), "BUF"),
+    (re.compile(r"(?i)^mux|^mx"), "MUX"),
+]
 
 
-def parse_verilog_simple(file_path: Path) -> tuple[list[str], list[tuple[int, int]], list[str]]:
-    """Extract signals and connectivity from a Verilog file."""
+def _classify_cell(cell_type: str) -> str:
+    """Map a cell library type name to a canonical gate type."""
+    low = cell_type.lower()
+    # Verilog primitives
+    if low in ("and", "nand", "or", "nor", "xor", "xnor", "not", "buf"):
+        return low.upper()
+    for pat, gtype in _CELL_TYPE_MAP:
+        if pat.search(cell_type):
+            return gtype
+    return "UNKNOWN"
+
+
+class FocalLoss(torch.nn.Module):
+    """Focal loss for imbalanced classification (Lin et al., 2017).
+
+    Down-weights well-classified examples so the model focuses on hard cases.
+    With gamma=0 this is standard cross-entropy.
+    """
+
+    def __init__(self, alpha: torch.Tensor | None = None, gamma: float = 2.0):
+        super().__init__()
+        self.gamma = gamma
+        self.register_buffer("alpha", alpha)
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        ce = F.cross_entropy(logits, targets, weight=self.alpha, reduction="none")
+        pt = torch.exp(-ce)  # probability of correct class
+        focal = ((1.0 - pt) ** self.gamma) * ce
+        return focal.mean()
+
+
+def compute_structural_features(
+    nodes: list[str],
+    edges: list[tuple[int, int]],
+    node_types: list[str],
+) -> torch.Tensor:
+    """Compute 7 structural features per node to help trojan localization.
+
+    Features:
+        0: degree_centrality — (fan_in + fan_out) / max_degree, normalized
+        1: is_io_adjacent — 1.0 if directly connected to INPUT or OUTPUT node
+        2: neighbor_type_entropy — Shannon entropy of gate types among 1-hop neighbors
+        3: rare_type_ratio — fraction of neighbors that are UNKNOWN or unusual types
+        4: local_fanout_anomaly — how much this node's fan-out deviates from its type's mean
+        5: min_dist_to_input — BFS distance to nearest INPUT (normalized, capped)
+        6: min_dist_to_output — BFS distance to nearest OUTPUT (normalized, capped)
+    """
+    import math
+    from collections import deque
+
+    n = len(nodes)
+    feats = torch.zeros((n, 7), dtype=torch.float)
+    if n == 0:
+        return feats
+
+    # Build adjacency lists
+    adj_out: list[list[int]] = [[] for _ in range(n)]
+    adj_in: list[list[int]] = [[] for _ in range(n)]
+    for s, t in edges:
+        adj_out[s].append(t)
+        adj_in[t].append(s)
+
+    fan_in = [len(adj_in[i]) for i in range(n)]
+    fan_out = [len(adj_out[i]) for i in range(n)]
+    degrees = [fan_in[i] + fan_out[i] for i in range(n)]
+    max_deg = max(degrees) if degrees else 1
+
+    # Identify I/O nodes
+    io_set = set()
+    input_nodes: list[int] = []
+    output_nodes: list[int] = []
+    for i, nt in enumerate(node_types):
+        if nt == "INPUT":
+            io_set.add(i)
+            input_nodes.append(i)
+        elif nt == "OUTPUT":
+            io_set.add(i)
+            output_nodes.append(i)
+
+    # Per-type fan-out statistics (for anomaly detection)
+    type_fanouts: dict[str, list[int]] = {}
+    for i, nt in enumerate(node_types):
+        type_fanouts.setdefault(nt, []).append(fan_out[i])
+    type_mean_fanout: dict[str, float] = {}
+    type_std_fanout: dict[str, float] = {}
+    for nt, fos in type_fanouts.items():
+        mean = sum(fos) / len(fos)
+        type_mean_fanout[nt] = mean
+        var = sum((x - mean) ** 2 for x in fos) / max(len(fos), 1)
+        type_std_fanout[nt] = max(var ** 0.5, 1.0)
+
+    # BFS from all inputs (multi-source BFS)
+    dist_from_input = [float("inf")] * n
+    if input_nodes:
+        q: deque[int] = deque()
+        for s in input_nodes:
+            dist_from_input[s] = 0
+            q.append(s)
+        while q:
+            u = q.popleft()
+            for v in adj_out[u]:
+                if dist_from_input[v] > dist_from_input[u] + 1:
+                    dist_from_input[v] = dist_from_input[u] + 1
+                    q.append(v)
+
+    # BFS from all outputs (reverse direction)
+    dist_from_output = [float("inf")] * n
+    if output_nodes:
+        q = deque()
+        for s in output_nodes:
+            dist_from_output[s] = 0
+            q.append(s)
+        while q:
+            u = q.popleft()
+            for v in adj_in[u]:
+                if dist_from_output[v] > dist_from_output[u] + 1:
+                    dist_from_output[v] = dist_from_output[u] + 1
+                    q.append(v)
+
+    # Cap distances for normalization
+    max_dist = 50.0
+
+    rare_types = frozenset({"UNKNOWN", "LATCH", "MUX"})
+
+    for i in range(n):
+        # 0: degree centrality
+        feats[i, 0] = degrees[i] / max(max_deg, 1)
+
+        # 1: is_io_adjacent
+        neighbors = set(adj_out[i]) | set(adj_in[i])
+        feats[i, 1] = 1.0 if neighbors & io_set else 0.0
+
+        # 2: neighbor type entropy
+        if neighbors:
+            type_counts: dict[str, int] = {}
+            for nb in neighbors:
+                nt = node_types[nb]
+                type_counts[nt] = type_counts.get(nt, 0) + 1
+            total = sum(type_counts.values())
+            entropy = 0.0
+            for cnt in type_counts.values():
+                p = cnt / total
+                if p > 0:
+                    entropy -= p * math.log2(p)
+            feats[i, 2] = entropy / max(math.log2(len(TYPE_VOCAB)), 1.0)  # normalize
+        else:
+            feats[i, 2] = 0.0
+
+        # 3: rare_type_ratio among neighbors
+        if neighbors:
+            rare_count = sum(1 for nb in neighbors if node_types[nb] in rare_types)
+            feats[i, 3] = rare_count / len(neighbors)
+
+        # 4: local fan-out anomaly (z-score)
+        nt = node_types[i]
+        mean_fo = type_mean_fanout.get(nt, 0.0)
+        std_fo = type_std_fanout.get(nt, 1.0)
+        z = (fan_out[i] - mean_fo) / std_fo
+        feats[i, 4] = min(max(z / 3.0, -1.0), 1.0)  # clamp to [-1, 1]
+
+        # 5: min distance to input (normalized)
+        d_in = dist_from_input[i]
+        feats[i, 5] = min(d_in, max_dist) / max_dist if d_in != float("inf") else 1.0
+
+        # 6: min distance to output (normalized)
+        d_out = dist_from_output[i]
+        feats[i, 6] = min(d_out, max_dist) / max_dist if d_out != float("inf") else 1.0
+
+    return feats
+
+
+def parse_verilog_simple(file_path: Path) -> tuple[list[str], list[tuple[int, int]], list[str], str | None]:
+    """Extract gates, signals, and connectivity from a Verilog netlist.
+
+    Handles both:
+    - Verilog primitives: ``and U1 (out, in1, in2);``
+    - Cell library instantiations with named ports:
+      ``nor2s1 U1 ( .Q(out), .DIN1(in1), .DIN2(in2) );``
+
+    Returns:
+        (nodes, edges, node_types, module_name)
+    """
     content = file_path.read_text(errors="replace")
+
+    # Extract module name(s) — skip helper modules like 'dff'
+    module_name: str | None = None
+    for mm in re.finditer(r'\bmodule\s+(\w+)', content):
+        name = mm.group(1)
+        if name.lower() not in ("dff", "dlatch"):
+            module_name = name
+            break
+
+    # Remove single-line comments
+    content = re.sub(r'//.*', '', content)
 
     nodes: list[str] = []
     node_types: list[str] = []
@@ -136,44 +353,168 @@ def parse_verilog_simple(file_path: Path) -> tuple[list[str], list[tuple[int, in
             nodes.append(name)
             node_types.append(ntype)
 
-    for m in re.finditer(r'\binput\s+(?:\[\d+:\d+\])?\s*(\w+)', content):
-        _add(m.group(1), "INPUT")
-    for m in re.finditer(r'\boutput\s+(?:reg\s+)?(?:\[\d+:\d+\])?\s*(\w+)', content):
-        _add(m.group(1), "OUTPUT")
-    for m in re.finditer(r'\bwire\s+(?:\[\d+:\d+\])?\s*(\w+)', content):
-        _add(m.group(1), "WIRE")
-    for m in re.finditer(r'\breg\s+(?:\[\d+:\d+\])?\s*(\w+)', content):
-        _add(m.group(1), "DFF")
+    # --- 1. Parse port/wire/reg declarations ---
+    # Handle comma-separated multi-signal declarations
+    for m in re.finditer(r'\binput\s+(?:\[\d+:\d+\]\s*)?([^;]+);', content):
+        for sig in re.findall(r'\b([A-Za-z_]\w*)\b', m.group(1)):
+            _add(sig, "INPUT")
+    for m in re.finditer(r'\boutput\s+(?:reg\s+)?(?:\[\d+:\d+\]\s*)?([^;]+);', content):
+        for sig in re.findall(r'\b([A-Za-z_]\w*)\b', m.group(1)):
+            _add(sig, "OUTPUT")
+    for m in re.finditer(r'\bwire\s+(?:\[\d+:\d+\]\s*)?([^;]+);', content):
+        for sig in re.findall(r'\b([A-Za-z_]\w*)\b', m.group(1)):
+            _add(sig, "WIRE")
+    for m in re.finditer(r'\breg\s+(?:\[\d+:\d+\]\s*)?([^;]+);', content):
+        for sig in re.findall(r'\b([A-Za-z_]\w*)\b', m.group(1)):
+            _add(sig, "DFF")
 
-    gate_pats = [
-        (r'\band\s+(\w+)\s*\(', "AND"), (r'\bor\s+(\w+)\s*\(', "OR"),
-        (r'\bnot\s+(\w+)\s*\(', "NOT"), (r'\bnand\s+(\w+)\s*\(', "NAND"),
-        (r'\bnor\s+(\w+)\s*\(', "NOR"), (r'\bxor\s+(\w+)\s*\(', "XOR"),
-        (r'\bxnor\s+(\w+)\s*\(', "XNOR"), (r'\bbuf\s+(\w+)\s*\(', "BUF"),
-    ]
-    for pat, gt in gate_pats:
-        for m in re.finditer(pat, content):
-            _add(m.group(1), gt)
+    # --- 2. Parse gate instantiations ---
+    # Match: cell_type instance_name ( ports );
+    # This handles both positional and named-port styles.
+    # First, join multi-line instantiations by finding cell_type instance ( ... );
+    inst_pattern = re.compile(
+        r'^\s*(\w+)\s+(\w+)\s*\(([^;]*)\)\s*;',
+        re.MULTILINE | re.DOTALL,
+    )
 
+    signal_map: dict[str, list[str]] = {}  # signal -> list of gate instance names that drive it
+    gate_inputs: dict[str, list[str]] = {}  # gate instance -> list of input signal names
+
+    for m in inst_pattern.finditer(content):
+        cell_type = m.group(1)
+        inst_name = m.group(2)
+        port_str = m.group(3)
+
+        if cell_type in VERILOG_KEYWORDS:
+            continue
+
+        gtype = _classify_cell(cell_type)
+        _add(inst_name, gtype)
+
+        # Parse port connections
+        output_signals: list[str] = []
+        input_signals: list[str] = []
+
+        if '.' in port_str:
+            # Named ports: .Q(sig), .DIN1(sig), ...
+            for pm in re.finditer(r'\.(\w+)\s*\(\s*(\w+)\s*\)', port_str):
+                port_name = pm.group(1).upper()
+                sig_name = pm.group(2)
+                # Ensure signal node exists
+                if sig_name not in seen:
+                    _add(sig_name, "WIRE")
+                # Q, QN, Y, Z, ZN, CO, S, SUM are typical output port names
+                if port_name in ("Q", "QN", "Y", "Z", "ZN", "CO", "S", "SUM", "SO", "OUT"):
+                    output_signals.append(sig_name)
+                else:
+                    input_signals.append(sig_name)
+        else:
+            # Positional ports: (out, in1, in2, ...)
+            sigs = [s.strip() for s in port_str.split(',') if s.strip()]
+            for sig in sigs:
+                sig = sig.strip()
+                if re.match(r'^[A-Za-z_]\w*$', sig):
+                    if sig not in seen:
+                        _add(sig, "WIRE")
+            # For primitives, first signal is output, rest are inputs
+            if sigs:
+                out_sig = sigs[0].strip()
+                if re.match(r'^[A-Za-z_]\w*$', out_sig):
+                    output_signals.append(out_sig)
+                for s in sigs[1:]:
+                    s = s.strip()
+                    if re.match(r'^[A-Za-z_]\w*$', s):
+                        input_signals.append(s)
+
+        for sig in output_signals:
+            signal_map.setdefault(sig, []).append(inst_name)
+        gate_inputs[inst_name] = input_signals
+
+    # --- 3. Build edges from connectivity ---
     node_map = {name: i for i, name in enumerate(nodes)}
     edges: list[tuple[int, int]] = []
+    edge_set: set[tuple[int, int]] = set()
 
-    for m in re.finditer(r'(\w+)\s*<?=\s*([^;]+);', content):
+    # For each gate, connect its input signals to the gate node
+    for inst_name, in_sigs in gate_inputs.items():
+        if inst_name not in node_map:
+            continue
+        gate_idx = node_map[inst_name]
+        for sig in in_sigs:
+            if sig in node_map:
+                sig_idx = node_map[sig]
+                e = (sig_idx, gate_idx)
+                if e not in edge_set:
+                    edge_set.add(e)
+                    edges.append(e)
+
+    # For each signal driven by a gate, connect gate -> signal
+    for sig, drivers in signal_map.items():
+        if sig not in node_map:
+            continue
+        sig_idx = node_map[sig]
+        for drv in drivers:
+            if drv in node_map:
+                drv_idx = node_map[drv]
+                e = (drv_idx, sig_idx)
+                if e not in edge_set:
+                    edge_set.add(e)
+                    edges.append(e)
+
+    # --- 4. Also parse assign statements for edges ---
+    for m in re.finditer(r'\bassign\s+(\w+)\s*=\s*([^;]+);', content):
         tgt = m.group(1)
         if tgt not in node_map:
             continue
         ti = node_map[tgt]
-        for src in re.findall(r'\b(\w+)\b', m.group(2)):
+        for src in re.findall(r'\b([A-Za-z_]\w*)\b', m.group(2)):
             if src in node_map and src != tgt:
-                edges.append((node_map[src], ti))
+                e = (node_map[src], ti)
+                if e not in edge_set:
+                    edge_set.add(e)
+                    edges.append(e)
 
-    return nodes, edges, node_types
+    return nodes, edges, node_types, module_name
+
+
+def _build_node_features(
+    nodes: list[str],
+    edges: list[tuple[int, int]],
+    node_types: list[str],
+) -> torch.Tensor:
+    """Build the full node feature matrix (one-hot type + basic + structural)."""
+    num_nodes = len(nodes)
+    n_type = len(TYPE_VOCAB)  # 15
+
+    x = torch.zeros((num_nodes, FEATURE_DIM), dtype=torch.float)
+
+    fan_in = [0] * num_nodes
+    fan_out = [0] * num_nodes
+    for s, t in edges:
+        fan_out[s] += 1
+        fan_in[t] += 1
+    max_fan = max(max(fan_in, default=1), max(fan_out, default=1), 1)
+
+    # One-hot gate type [0..14] + basic features [15..18]
+    for i, ntype in enumerate(node_types):
+        idx = TYPE_TO_IDX.get(ntype, TYPE_TO_IDX["UNKNOWN"])
+        x[i, idx] = 1.0
+        x[i, n_type + 0] = fan_in[i] / max_fan
+        x[i, n_type + 1] = fan_out[i] / max_fan
+        x[i, n_type + 2] = (fan_in[i] + 1) / (fan_out[i] + fan_in[i] + 2)
+        x[i, n_type + 3] = 1.0 if ntype == "DFF" else 0.0
+
+    # Structural features [19..25]
+    struct_feats = compute_structural_features(nodes, edges, node_types)
+    x[:, n_type + 4:] = struct_feats
+
+    return x
 
 
 def create_graph_from_verilog(file_path: Path, is_trojan_file: bool) -> Data | None:
     """Build a PyG Data object from a Verilog source file."""
     try:
-        nodes, edges, node_types = parse_verilog_simple(file_path)
+        nodes, edges, node_types, module_name = parse_verilog_simple(file_path)
     except Exception as e:
         logger.debug(f"Parse error {file_path}: {e}")
         return None
@@ -184,24 +525,7 @@ def create_graph_from_verilog(file_path: Path, is_trojan_file: bool) -> Data | N
     num_nodes = len(nodes)
 
     # --- node features ---
-    x = torch.zeros((num_nodes, FEATURE_DIM), dtype=torch.float)
-
-    fan_in = [0] * num_nodes
-    fan_out = [0] * num_nodes
-    for s, t in edges:
-        fan_out[s] += 1
-        fan_in[t] += 1
-    max_fan = max(max(fan_in, default=1), max(fan_out, default=1), 1)
-
-    for i, (_, ntype) in enumerate(zip(nodes, node_types)):
-        idx = TYPE_TO_IDX.get(ntype, TYPE_TO_IDX["UNKNOWN"])
-        x[i, idx] = 1.0
-        x[i, -4] = fan_in[i] / max_fan
-        x[i, -3] = fan_out[i] / max_fan
-        # simple topological depth estimate (normalised)
-        x[i, -2] = (fan_in[i] + 1) / (fan_out[i] + fan_in[i] + 2)
-        # sequential flag
-        x[i, -1] = 1.0 if ntype == "DFF" else 0.0
+    x = _build_node_features(nodes, edges, node_types)
 
     # --- edges ---
     if edges:
@@ -228,6 +552,7 @@ def create_graph_from_verilog(file_path: Path, is_trojan_file: bool) -> Data | N
     # Store metadata as plain Python attrs (not in PyG's _store)
     data._file_path = str(file_path)
     data._node_names = nodes
+    data._module_name = module_name
     return data
 
 
@@ -282,7 +607,7 @@ def create_graph_with_trit_labels(
 ) -> Data | None:
     """Build a PyG Data object, using TRIT labels for precise node labeling when available."""
     try:
-        nodes, edges, node_types = parse_verilog_simple(file_path)
+        nodes, edges, node_types, module_name = parse_verilog_simple(file_path)
     except Exception as e:
         logger.debug(f"Parse error {file_path}: {e}")
         return None
@@ -293,22 +618,7 @@ def create_graph_with_trit_labels(
     num_nodes = len(nodes)
 
     # --- node features ---
-    x = torch.zeros((num_nodes, FEATURE_DIM), dtype=torch.float)
-
-    fan_in = [0] * num_nodes
-    fan_out = [0] * num_nodes
-    for s, t in edges:
-        fan_out[s] += 1
-        fan_in[t] += 1
-    max_fan = max(max(fan_in, default=1), max(fan_out, default=1), 1)
-
-    for i, (_, ntype) in enumerate(zip(nodes, node_types)):
-        idx = TYPE_TO_IDX.get(ntype, TYPE_TO_IDX["UNKNOWN"])
-        x[i, idx] = 1.0
-        x[i, -4] = fan_in[i] / max_fan
-        x[i, -3] = fan_out[i] / max_fan
-        x[i, -2] = (fan_in[i] + 1) / (fan_out[i] + fan_in[i] + 2)
-        x[i, -1] = 1.0 if ntype == "DFF" else 0.0
+    x = _build_node_features(nodes, edges, node_types)
 
     # --- edges ---
     if edges:
@@ -337,6 +647,7 @@ def create_graph_with_trit_labels(
     )
     data._file_path = str(file_path)
     data._node_names = nodes
+    data._module_name = module_name
     return data
 
 
@@ -689,8 +1000,12 @@ class TrojanGNN(torch.nn.Module):
             torch.nn.Linear(hidden_dim // 2, 2),
         )
 
-        # Node-level head
+        # Node-level head (deeper for better localization)
         self.node_head = torch.nn.Sequential(
+            torch.nn.Linear(hidden_dim, hidden_dim),
+            torch.nn.BatchNorm1d(hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout),
             torch.nn.Linear(hidden_dim, hidden_dim // 2),
             torch.nn.ReLU(),
             torch.nn.Dropout(dropout),
@@ -944,12 +1259,13 @@ def train_model(
     n_clean_nodes = (all_node_labels == 0).sum()
     n_trojan_nodes = (all_node_labels == 1).sum()
     if n_trojan_nodes > 0:
-        node_weight = torch.tensor(
-            [1.0, float(n_clean_nodes) / float(n_trojan_nodes)], device=device,
-        )
+        # Cap the weight to avoid extreme gradients; sqrt dampening
+        raw_ratio = float(n_clean_nodes) / float(n_trojan_nodes)
+        capped_ratio = min(raw_ratio, 100.0)  # cap at 100x
+        node_weight = torch.tensor([1.0, capped_ratio], device=device)
     else:
         node_weight = torch.tensor([1.0, 1.0], device=device)
-    logger.info(f"Node class weights: clean=1.0, trojan={node_weight[1]:.2f}")
+    logger.info(f"Node class weights: clean=1.0, trojan={node_weight[1]:.2f} (raw ratio={raw_ratio:.0f})")
 
     # ---- graph-level class weights ----
     graph_labels = []
@@ -965,6 +1281,11 @@ def train_model(
     else:
         graph_weight = torch.tensor([1.0, 1.0], device=device)
     logger.info(f"Graph class weights: clean=1.0, trojan={graph_weight[1]:.2f}")
+
+    # ---- focal loss for node-level (handles extreme imbalance better) ----
+    node_focal_loss = FocalLoss(alpha=node_weight, gamma=2.0).to(device)
+    logger.info("Using FocalLoss(gamma=2.0) for node-level classification")
+    logger.info("Loss weighting: 30% graph + 70% node (prioritize localization)")
 
     best_val_loss = float("inf")
     best_val_f1 = 0.0
@@ -994,13 +1315,13 @@ def train_model(
                 g_loss = F.cross_entropy(graph_logits, batch.y, weight=graph_weight)
 
                 if hasattr(batch, "node_labels"):
-                    n_loss = F.cross_entropy(node_logits, batch.node_labels, weight=node_weight)
+                    n_loss = node_focal_loss(node_logits, batch.node_labels)
                     train_nlabels.extend(batch.node_labels.cpu().numpy())
                     train_npreds.extend(node_logits.argmax(1).detach().cpu().numpy())
                 else:
                     n_loss = torch.tensor(0.0, device=device)
 
-                loss = 0.6 * g_loss + 0.4 * n_loss  # weight graph-level more
+                loss = 0.3 * g_loss + 0.7 * n_loss  # prioritize node localization
 
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
@@ -1037,12 +1358,12 @@ def train_model(
                     gl, nl = model(batch.x, batch.edge_index, batch.batch)
                     g_loss = F.cross_entropy(gl, batch.y, weight=graph_weight)
                     if hasattr(batch, "node_labels"):
-                        n_loss = F.cross_entropy(nl, batch.node_labels, weight=node_weight)
+                        n_loss = node_focal_loss(nl, batch.node_labels)
                         val_nlabels.extend(batch.node_labels.cpu().numpy())
                         val_npreds.extend(nl.argmax(1).cpu().numpy())
                     else:
                         n_loss = torch.tensor(0.0, device=device)
-                    loss = 0.6 * g_loss + 0.4 * n_loss
+                    loss = 0.3 * g_loss + 0.7 * n_loss
 
                 val_loss += loss.item() * batch.num_graphs
                 val_total += batch.num_graphs
@@ -1291,6 +1612,34 @@ def main() -> int:
         logger.info(f"  F1        : {tnm.get('test_node_f1', 0):.4f}")
 
     logger.info(f"\nWeights: backend/trojan_classifier/weights/{args.architecture}_weights.pt")
+
+    # ---- per-graph module-level report on test set ----
+    logger.info("-" * 40)
+    logger.info("MODULE-LEVEL REPORT (test set):")
+    model.eval()
+    misclassified: list[str] = []
+    with torch.no_grad():
+        for g in test_graphs:
+            g_dev = g.to(device)
+            batch_idx = torch.zeros(g_dev.num_nodes, dtype=torch.long, device=device)
+            with autocast(device_type=device.type, enabled=device.type == "cuda"):
+                gl, _ = model(g_dev.x, g_dev.edge_index, batch_idx)
+            pred = gl.argmax(1).item()
+            true = g_dev.y.item()
+            mod_name = getattr(g, "_module_name", None) or "unknown"
+            fpath = Path(getattr(g, "_file_path", "")).name
+            status = "OK" if pred == true else "WRONG"
+            label_str = "trojan" if true == 1 else "clean"
+            pred_str = "trojan" if pred == 1 else "clean"
+            if pred != true:
+                misclassified.append(f"  {fpath} | module={mod_name} | true={label_str} pred={pred_str}")
+
+    if misclassified:
+        logger.info(f"  Misclassified ({len(misclassified)} graphs):")
+        for line in misclassified:
+            logger.info(line)
+    else:
+        logger.info("  All test graphs classified correctly!")
 
     # ---- matplotlib plots ----
     plot_dir = args.plot_dir or (Path(__file__).parent / "plots")

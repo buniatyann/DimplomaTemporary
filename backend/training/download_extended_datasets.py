@@ -129,6 +129,7 @@ def download_epfl_benchmarks():
     if ctrl_src.exists():
         for f in ctrl_src.glob("*.v"):
             shutil.copy(f, ctrl_dst / f.name)
+        
         print(f"Copied EPFL control files to {ctrl_dst}")
 
 def cleanup_temp():
