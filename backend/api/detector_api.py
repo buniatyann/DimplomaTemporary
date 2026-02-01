@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-from trojan_detector.backend.core.pipeline import DetectionPipeline, ProgressCallback
+from backend.core.pipeline import DetectionPipeline, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
