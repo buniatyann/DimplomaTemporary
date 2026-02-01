@@ -1,1 +1,1 @@
-"""Future PyQt graphical interface for the trojan detection system."""
+"""PySide6 graphical interface for the trojan detection system."""
