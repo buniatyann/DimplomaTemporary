@@ -243,12 +243,13 @@ class TrojanClassifier:
         batch = torch.zeros(data.x.shape[0], dtype=torch.long, device=self._device)
 
         with torch.no_grad():
-            logits = self._model(data.x, data.edge_index, batch)
-            probs = F.softmax(logits, dim=1)
+            graph_logits, node_logits = self._model(data.x, data.edge_index, batch)
+            graph_probs = F.softmax(graph_logits, dim=1)
+            node_probs = F.softmax(node_logits, dim=1)
 
         # Class 0 = clean, Class 1 = infected
-        trojan_prob = probs[0, 1].item()
-        clean_prob = probs[0, 0].item()
+        trojan_prob = graph_probs[0, 1].item()
+        clean_prob = graph_probs[0, 0].item()
         confidence = max(trojan_prob, clean_prob)
 
         if confidence < self._confidence_threshold:
@@ -258,8 +259,8 @@ class TrojanClassifier:
         else:
             verdict = TrojanVerdict.CLEAN
 
-        # Compute per-node suspicion scores
-        gate_scores = self._compute_node_attributions(circuit_graph)
+        # Use node-level predictions for per-node suspicion scores
+        gate_scores = self._extract_node_scores(circuit_graph, node_probs)
 
         # Identify trojan locations for nodes above threshold
         trojan_locations = self._locate_trojans(circuit_graph, gate_scores)
@@ -289,38 +290,23 @@ class TrojanClassifier:
             risk_threshold=self._risk_threshold,
         )
 
-    def _compute_node_attributions(
-        self, circuit_graph: CircuitGraph
+    def _extract_node_scores(
+        self, circuit_graph: CircuitGraph, node_probs: torch.Tensor,
     ) -> dict[str, float]:
-        """Compute per-node suspicion scores using gradient-based attribution."""
-        assert self._model is not None
+        """Extract per-node trojan probability from node-level predictions.
 
-        data = circuit_graph.graph_data
-        data = data.to(self._device)
+        Args:
+            circuit_graph: The circuit graph.
+            node_probs: Softmax output from the node head, shape (num_nodes, 2).
 
-        x = data.x.clone().requires_grad_(True)
+        Returns:
+            Dict mapping gate names to their trojan probability [0, 1].
+        """
+        # Column 1 = trojan probability per node
+        scores = node_probs[:, 1].cpu().tolist()
 
-        # Get node embeddings
-        node_embeddings = self._model.get_node_embeddings(x, data.edge_index)
-
-        # Compute gradient of trojan class score w.r.t. node embeddings
-        trojan_signal = node_embeddings.sum(dim=1)
-        trojan_signal.sum().backward()
-
-        if x.grad is not None:
-            # Use L2 norm of input gradients as attribution
-            attributions = x.grad.norm(dim=1).cpu().tolist()
-        else:
-            attributions = [0.0] * data.x.shape[0]
-
-        # Normalize to [0, 1]
-        max_attr = max(attributions) if attributions else 1.0
-        if max_attr > 0:
-            attributions = [a / max_attr for a in attributions]
-
-        # Map node indices to gate names
         gate_scores: dict[str, float] = {}
-        for idx, score in enumerate(attributions):
+        for idx, score in enumerate(scores):
             gate_name = circuit_graph.node_to_gate.get(idx, f"node_{idx}")
             gate_scores[gate_name] = round(score, 6)
 
