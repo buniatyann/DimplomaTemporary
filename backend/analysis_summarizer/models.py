@@ -28,6 +28,8 @@ class AnalysisReport(BaseModel):
     classification_results: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    syntax_errors: list[dict[str, Any]] = Field(default_factory=list)
+    synthesis_errors: list[dict[str, Any]] = Field(default_factory=list)
     audit_trail: list[dict[str, Any]] = Field(default_factory=list)
     sections: list[ReportSection] = Field(default_factory=list)
 
