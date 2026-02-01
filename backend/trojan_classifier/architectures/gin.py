@@ -4,75 +4,103 @@ from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
-from torch_geometric.nn import GINConv, global_mean_pool
+from torch_geometric.nn import BatchNorm, GINConv, global_max_pool, global_mean_pool
 
 
 class GINClassifier(torch.nn.Module):
-    """GIN-based binary classifier for circuit graphs.
+    """GIN-based classifier matching the TrojanGNN training architecture.
 
-    Maximizes expressive power through injective aggregation functions,
-    often achieving best performance for structural classification tasks.
+    Includes input projection, BatchNorm, residual connections, and
+    separate graph-level and node-level classification heads.
     """
 
     def __init__(
         self,
         input_dim: int,
-        hidden_dim: int = 64,
-        num_layers: int = 3,
-        dropout: float = 0.5,
+        hidden_dim: int = 128,
+        num_layers: int = 4,
+        dropout: float = 0.3,
     ) -> None:
         super().__init__()
+        self.dropout = dropout
+        self.num_layers = num_layers
+
+        # Input projection
+        self.input_proj = torch.nn.Linear(input_dim, hidden_dim)
+
+        # GNN conv layers + BatchNorm
         self.convs = torch.nn.ModuleList()
-        self.batch_norms = torch.nn.ModuleList()
-
-        # First layer
-        nn1 = torch.nn.Sequential(
-            torch.nn.Linear(input_dim, hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_dim, hidden_dim),
-        )
-        self.convs.append(GINConv(nn1))
-        self.batch_norms.append(torch.nn.BatchNorm1d(hidden_dim))
-
-        # Hidden layers
-        for _ in range(num_layers - 1):
-            nn_hidden = torch.nn.Sequential(
+        self.bns = torch.nn.ModuleList()
+        for _ in range(num_layers):
+            nn = torch.nn.Sequential(
                 torch.nn.Linear(hidden_dim, hidden_dim),
+                torch.nn.BatchNorm1d(hidden_dim),
                 torch.nn.ReLU(),
                 torch.nn.Linear(hidden_dim, hidden_dim),
             )
-            self.convs.append(GINConv(nn_hidden))
-            self.batch_norms.append(torch.nn.BatchNorm1d(hidden_dim))
+            self.convs.append(GINConv(nn))
+            self.bns.append(BatchNorm(hidden_dim))
 
-        self.classifier = torch.nn.Sequential(
+        # Graph-level head (mean + max pooling → hidden_dim*2)
+        self.graph_head = torch.nn.Sequential(
+            torch.nn.Linear(hidden_dim * 2, hidden_dim),
+            torch.nn.BatchNorm1d(hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout),
             torch.nn.Linear(hidden_dim, hidden_dim // 2),
             torch.nn.ReLU(),
             torch.nn.Dropout(dropout),
             torch.nn.Linear(hidden_dim // 2, 2),
         )
 
-        self.dropout = dropout
+        # Node-level head
+        self.node_head = torch.nn.Sequential(
+            torch.nn.Linear(hidden_dim, hidden_dim),
+            torch.nn.BatchNorm1d(hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout),
+            torch.nn.Linear(hidden_dim, hidden_dim // 2),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout),
+            torch.nn.Linear(hidden_dim // 2, 2),
+        )
 
     def forward(
-        self, x: torch.Tensor, edge_index: torch.Tensor, batch: torch.Tensor | None = None
-    ) -> torch.Tensor:
-        for conv, bn in zip(self.convs, self.batch_norms):
-            x = conv(x, edge_index)
-            x = bn(x)
+        self, x: torch.Tensor, edge_index: torch.Tensor, batch: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if batch is None:
+            batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
+
+        x = F.relu(self.input_proj(x))
+
+        for i in range(self.num_layers):
+            identity = x
+            x = self.convs[i](x, edge_index)
+            x = self.bns[i](x)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
+            x = x + identity  # residual
 
-        x = global_mean_pool(x, batch)
+        node_emb = x
 
-        return self.classifier(x)
+        g_mean = global_mean_pool(node_emb, batch)
+        g_max = global_max_pool(node_emb, batch)
+        graph_emb = torch.cat([g_mean, g_max], dim=1)
+
+        graph_logits = self.graph_head(graph_emb)
+        node_logits = self.node_head(node_emb)
+
+        return graph_logits, node_logits
 
     def get_node_embeddings(
-        self, x: torch.Tensor, edge_index: torch.Tensor
+        self, x: torch.Tensor, edge_index: torch.Tensor,
     ) -> torch.Tensor:
         """Return per-node embeddings before pooling."""
-        for conv, bn in zip(self.convs, self.batch_norms):
-            x = conv(x, edge_index)
-            x = bn(x)
+        x = F.relu(self.input_proj(x))
+        for i in range(self.num_layers):
+            identity = x
+            x = self.convs[i](x, edge_index)
+            x = self.bns[i](x)
             x = F.relu(x)
-
+            x = x + identity
         return x
