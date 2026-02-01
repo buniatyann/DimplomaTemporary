@@ -52,6 +52,10 @@ class AnalysisSummarizer:
         report.warnings = [e.message for e in self._history.get_warnings()]
         report.errors = [e.message for e in self._history.get_errors()]
 
+        # Structured syntax and synthesis errors (with line info)
+        report.syntax_errors = self._extract_syntax_errors()
+        report.synthesis_errors = self._extract_synthesis_errors()
+
         # Audit trail
         report.audit_trail = [e.to_dict() for e in self._history.entries]
 
@@ -87,18 +91,21 @@ class AnalysisSummarizer:
                 from backend.analysis_summarizer.exporters.json_exporter import (
                     JsonExporter,
                 )
+              
                 path = JsonExporter().export(report, output_dir)
                 paths.append(path)
             elif fmt == "pdf":
                 from backend.analysis_summarizer.exporters.pdf_exporter import (
                     PdfExporter,
                 )
+              
                 path = PdfExporter().export(report, output_dir)
                 paths.append(path)
             elif fmt == "text":
                 from backend.analysis_summarizer.exporters.text_exporter import (
                     TextExporter,
                 )
+              
                 path = TextExporter().export(report, output_dir)
                 paths.append(path)
             else:
@@ -125,6 +132,7 @@ class AnalysisSummarizer:
             stage = self._history.stages.get(stage_name)
             if stage is None:
                 continue
+            
             summary.append({
                 "stage": stage_name,
                 "status": stage.status,
@@ -132,6 +140,7 @@ class AnalysisSummarizer:
                 "warning_count": len(stage.warnings),
                 "error_count": len(stage.errors),
             })
+
         return summary
 
     def _extract_parsing_details(self) -> dict[str, Any]:
@@ -256,6 +265,49 @@ class AnalysisSummarizer:
             )
 
         return sections
+
+    def _extract_syntax_errors(self) -> list[dict[str, Any]]:
+        """Extract structured syntax errors with line/column info from History."""
+        from backend.core.history import Severity
+
+        errors: list[dict[str, Any]] = []
+        for entry in self._history.entries:
+            if entry.stage != "syntax_parser":
+                continue
+            if entry.severity not in (Severity.ERROR, Severity.CRITICAL):
+                continue
+            
+            err: dict[str, Any] = {"message": entry.message}
+            if entry.data:
+                if "file_path" in entry.data:
+                    err["file_path"] = entry.data["file_path"]
+                if "line" in entry.data:
+                    err["line"] = entry.data["line"]
+                if "column" in entry.data:
+                    err["column"] = entry.data["column"]
+            
+            errors.append(err)
+        
+        return errors
+
+    def _extract_synthesis_errors(self) -> list[dict[str, Any]]:
+        """Extract structured synthesis errors from History."""
+        from backend.core.history import Severity
+
+        errors: list[dict[str, Any]] = []
+        for entry in self._history.entries:
+            if entry.stage != "netlist_synthesizer":
+                continue
+            if entry.severity not in (Severity.ERROR, Severity.CRITICAL):
+                continue
+        
+            err: dict[str, Any] = {"message": entry.message}
+            if entry.data and "yosys_output" in entry.data:
+                err["yosys_output"] = entry.data["yosys_output"]
+        
+            errors.append(err)
+        
+        return errors
 
     def _build_trojan_locations_section(
         self, classification_results: dict[str, Any]
