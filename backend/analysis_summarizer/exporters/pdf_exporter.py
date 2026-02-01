@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from analysis_summarizer.models import AnalysisReport
+from backend.analysis_summarizer.models import AnalysisReport
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,7 @@ class PdfExporter:
             ["SystemVerilog Files", str(fi.get("systemverilog_files", 0))],
             ["Total Size (bytes)", str(fi.get("total_size", 0))],
         ]
+
         elements.append(self._make_table(fi_data))
         elements.append(Spacer(1, 5 * mm))
 
@@ -96,6 +97,7 @@ class PdfExporter:
                 str(stage.get("warning_count", 0)),
                 str(stage.get("error_count", 0)),
             ])
+        
         elements.append(self._make_table(ps_data, header=True))
         elements.append(Spacer(1, 5 * mm))
 
@@ -108,9 +110,11 @@ class PdfExporter:
                 ["Total Gates", str(pd.get("total_gates", 0))],
                 ["Total Wires", str(pd.get("total_wires", 0))],
             ]
+        
             dur = pd.get("parse_duration")
             if dur is not None:
                 pd_data.append(["Parse Duration", f"{dur:.4f}s"])
+        
             elements.append(self._make_table(pd_data))
             elements.append(Spacer(1, 5 * mm))
 
@@ -124,6 +128,7 @@ class PdfExporter:
                 ["Total Inputs", str(ss.get("total_inputs", 0))],
                 ["Total Outputs", str(ss.get("total_outputs", 0))],
             ]
+        
             elements.append(self._make_table(ss_data))
 
             cell_counts = ss.get("cell_counts", {})
@@ -135,7 +140,9 @@ class PdfExporter:
                     [ctype, str(count)]
                     for ctype, count in sorted(cell_counts.items())
                 ]
+        
                 elements.append(self._make_table(cc_data, header=True))
+        
             elements.append(Spacer(1, 5 * mm))
 
         # Graph Properties
@@ -148,6 +155,7 @@ class PdfExporter:
                 ["Average Degree", f"{gp.get('average_degree', 0):.4f}"],
                 ["Feature Dimensionality", str(gp.get("feature_dim", 0))],
             ]
+        
             elements.append(self._make_table(gp_data))
             elements.append(Spacer(1, 5 * mm))
 
@@ -162,6 +170,7 @@ class PdfExporter:
                 ["Model", f"{cr.get('architecture', 'N/A')} v{cr.get('model_version', 'N/A')}"],
                 ["Device", str(cr.get("device", "N/A"))],
             ]
+        
             elements.append(self._make_table(cr_data))
 
             suspicious = cr.get("top_suspicious_gates", [])
@@ -173,7 +182,9 @@ class PdfExporter:
                     [entry["gate"], f"{entry['score']:.6f}"]
                     for entry in suspicious
                 ]
+        
                 elements.append(self._make_table(sg_data, header=True))
+        
             elements.append(Spacer(1, 5 * mm))
 
         # Warnings
@@ -181,6 +192,7 @@ class PdfExporter:
             elements.append(Paragraph("Warnings", heading_style))
             for w in report.warnings:
                 elements.append(Paragraph(f"- {w}", body_style))
+        
             elements.append(Spacer(1, 5 * mm))
 
         # Errors
@@ -207,11 +219,13 @@ class PdfExporter:
             ("LEFTPADDING", (0, 0), (-1, -1), 6),
             ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ]
+
         if header:
             style_commands.extend([
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
             ])
+
         table.setStyle(TableStyle(style_commands))
         return table
