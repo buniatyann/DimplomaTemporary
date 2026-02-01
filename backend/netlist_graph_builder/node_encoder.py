@@ -1,30 +1,39 @@
-"""NodeEncoder for transforming gate types into numerical feature vectors."""
+"""NodeEncoder for transforming gate types into numerical feature vectors.
+
+Feature vector layout (26 dimensions total):
+    [ 0..14] one-hot gate type (matching training vocabulary)
+    [15..18] basic features: fan_in, fan_out, depth, is_seq
+    [19..25] structural features (computed separately by builder)
+"""
 
 from __future__ import annotations
-
 import logging
-
 import torch
 
 logger = logging.getLogger(__name__)
 
+# Vocabulary must match the training order exactly (train_local.py)
 DEFAULT_VOCABULARY: dict[str, int] = {
-    "AND": 0,
-    "NAND": 1,
-    "OR": 2,
-    "NOR": 3,
-    "XOR": 4,
-    "XNOR": 5,
+    "INPUT": 0,
+    "OUTPUT": 1,
+    "WIRE": 2,
+    "DFF": 3,
+    "AND": 4,
+    "OR": 5,
     "NOT": 6,
-    "BUF": 7,
-    "INV": 8,
-    "MUX": 9,
-    "DFF": 10,
-    "LATCH": 11,
-    "INPUT": 12,
-    "OUTPUT": 13,
+    "NAND": 7,
+    "NOR": 8,
+    "XOR": 9,
+    "XNOR": 10,
+    "BUF": 11,
+    "MUX": 12,
+    "LATCH": 13,
     "UNKNOWN": 14,
 }
+
+# Total feature dimension: 15 one-hot + 4 basic + 7 structural
+FEATURE_DIM = 26
+VOCAB_SIZE = 15
 
 
 class NodeEncoder:
@@ -45,8 +54,8 @@ class NodeEncoder:
 
     @property
     def feature_dim(self) -> int:
-        """Total feature dimensionality: one-hot encoding + fan-in + fan-out."""
-        return self.vocab_size + 2
+        """Total feature dimensionality: 15 one-hot + 4 basic + 7 structural = 26."""
+        return FEATURE_DIM
 
     @property
     def unknown_types(self) -> set[str]:
@@ -58,7 +67,10 @@ class NodeEncoder:
         fan_in: int = 0,
         fan_out: int = 0,
     ) -> torch.Tensor:
-        """Encode a single gate into a feature vector.
+        """Encode a single gate into a feature vector (basic features only).
+
+        Structural features (indices 19-25) are left as zero and must be
+        filled in by the builder after edges are available.
 
         Args:
             canonical_type: Normalized gate type string.
@@ -70,14 +82,25 @@ class NodeEncoder:
         """
         idx = self._vocab.get(canonical_type, self._unknown_idx)
         if canonical_type not in self._vocab:
-            self._unknown_types.add(canonical_type)
+            # Map INV -> NOT (canonical alias)
+            if canonical_type == "INV":
+                idx = self._vocab.get("NOT", self._unknown_idx)
+            else:
+                self._unknown_types.add(canonical_type)
 
-        one_hot = torch.zeros(self.vocab_size, dtype=torch.float32)
-        one_hot[idx] = 1.0
+        vec = torch.zeros(FEATURE_DIM, dtype=torch.float32)
 
-        extras = torch.tensor([float(fan_in), float(fan_out)], dtype=torch.float32)
+        # One-hot gate type [0..14]
+        vec[idx] = 1.0
 
-        return torch.cat([one_hot, extras])
+        # Basic features [15..18] — will be normalized by encode_batch
+        vec[VOCAB_SIZE + 0] = float(fan_in)
+        vec[VOCAB_SIZE + 1] = float(fan_out)
+        vec[VOCAB_SIZE + 2] = (fan_in + 1) / (fan_out + fan_in + 2)  # depth proxy
+        vec[VOCAB_SIZE + 3] = 1.0 if canonical_type == "DFF" else 0.0  # is_seq
+
+        # Structural features [19..25] left as 0 — filled by builder
+        return vec
 
     def encode_batch(
         self,
@@ -87,10 +110,24 @@ class NodeEncoder:
     ) -> torch.Tensor:
         """Encode a batch of gates into a feature matrix.
 
+        Fan-in and fan-out are normalized by the batch maximum.
+
         Returns:
             2D tensor of shape (num_gates, feature_dim).
         """
         features = [
             self.encode(t, fi, fo) for t, fi, fo in zip(types, fan_ins, fan_outs)
         ]
-        return torch.stack(features)
+        x = torch.stack(features)
+
+        # Normalize fan_in/fan_out by max in the batch
+        max_fan = max(
+            max(fan_ins, default=1),
+            max(fan_outs, default=1),
+            1,
+        )
+
+        x[:, VOCAB_SIZE + 0] /= max_fan  # fan_in normalized
+        x[:, VOCAB_SIZE + 1] /= max_fan  # fan_out normalized
+
+        return x

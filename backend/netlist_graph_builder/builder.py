@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from typing import Any
 
 import torch
@@ -15,12 +16,53 @@ from backend.core.history import History
 from backend.core.outcome import StageOutcome
 from backend.netlist_graph_builder.edge_encoder import EdgeEncoder
 from backend.netlist_graph_builder.models import CircuitGraph, NodeFeatures
-from backend.netlist_graph_builder.node_encoder import NodeEncoder
-from backend.netlist_synthesizer.models import SynthesisResult
+from backend.netlist_graph_builder.node_encoder import FEATURE_DIM, VOCAB_SIZE, NodeEncoder
 
 logger = logging.getLogger(__name__)
 
 STAGE = "netlist_graph_builder"
+
+# Types considered rare for structural features
+_RARE_TYPES = frozenset({"UNKNOWN", "LATCH", "MUX"})
+
+# Yosys internal cell types → canonical gate types
+_YOSYS_TYPE_MAP: dict[str, str] = {
+    "$_AND_": "AND", "$_NAND_": "NAND",
+    "$_OR_": "OR", "$_NOR_": "NOR",
+    "$_XOR_": "XOR", "$_XNOR_": "XNOR",
+    "$_NOT_": "NOT", "$_BUF_": "BUF",
+    "$_MUX_": "MUX",
+    "$_DFF_P_": "DFF", "$_DFF_N_": "DFF",
+    "$_DFF_PP0_": "DFF", "$_DFF_PP1_": "DFF",
+    "$_DFF_PN0_": "DFF", "$_DFF_PN1_": "DFF",
+    "$_DFFE_PP_": "DFF", "$_DFFE_PN_": "DFF",
+    "$_DLATCH_P_": "LATCH", "$_DLATCH_N_": "LATCH",
+    "$DFF": "DFF", "$DFFE": "DFF",
+    "$DLATCH": "LATCH",
+    "$AND": "AND", "$OR": "OR", "$NOT": "NOT",
+    "$XOR": "XOR", "$XNOR": "XNOR",
+    "$MUX": "MUX",
+}
+
+
+def _normalize_yosys_type(raw_type: str) -> str:
+    """Normalize a Yosys cell type to canonical gate type."""
+    # Direct match
+    if raw_type in _YOSYS_TYPE_MAP:
+        return _YOSYS_TYPE_MAP[raw_type]
+    # Upper-case direct match
+    upper = raw_type.upper()
+    if upper in _YOSYS_TYPE_MAP:
+        return _YOSYS_TYPE_MAP[upper]
+    # Strip $ and _ prefixes/suffixes for matching
+    stripped = raw_type.lstrip("$").strip("_").upper()
+    # Common prefixes: DFF_X1, AND2_X1, NAND3, etc.
+    for prefix in ("DFF", "AND", "NAND", "OR", "NOR", "XOR", "XNOR",
+                    "NOT", "BUF", "INV", "MUX", "LATCH"):
+        if stripped.startswith(prefix):
+            return "NOT" if prefix == "INV" else prefix
+
+    return stripped if stripped else "UNKNOWN"
 
 
 class NetlistGraphBuilder:
@@ -37,7 +79,7 @@ class NetlistGraphBuilder:
         self._edge_encoder = edge_encoder or EdgeEncoder()
 
     def process(
-        self, synthesis_result: SynthesisResult
+        self, synthesis_result: "SynthesisResult"
     ) -> StageOutcome[CircuitGraph]:
         """Build a circuit graph from a synthesis result.
 
@@ -47,6 +89,8 @@ class NetlistGraphBuilder:
         Returns:
             StageOutcome wrapping a CircuitGraph.
         """
+        from backend.netlist_synthesizer.models import SynthesisResult as _SR  # noqa: F841
+
         self._history.begin_stage(STAGE)
         start = time.time()
 
@@ -55,11 +99,13 @@ class NetlistGraphBuilder:
         except GraphBuildError as e:
             self._history.error(STAGE, str(e), data=e.context)
             self._history.end_stage(STAGE, status="failed")
+
             return StageOutcome.fail(str(e), stage_name=STAGE)
         except Exception as e:
             msg = f"Unexpected error during graph construction: {e}"
             self._history.error(STAGE, msg)
             self._history.end_stage(STAGE, status="failed")
+
             return StageOutcome.fail(msg, stage_name=STAGE)
 
         duration = time.time() - start
@@ -78,14 +124,15 @@ class NetlistGraphBuilder:
                 f"Unknown gate types encountered: {unknown}",
                 data={"unknown_types": list(unknown)},
             )
+
             self._history.record(STAGE, "unknown_gate_types", list(unknown))
 
         self._history.info(
             STAGE,
             f"Graph built: {graph.node_count} nodes, {graph.edge_count} edges",
         )
-        self._history.end_stage(STAGE, status="completed")
 
+        self._history.end_stage(STAGE, status="completed")
         return StageOutcome.ok(graph, stage_name=STAGE)
 
     def _build_from_json(self, json_netlist: dict[str, Any]) -> CircuitGraph:
@@ -100,7 +147,6 @@ class NetlistGraphBuilder:
 
         cells = module_data.get("cells", {})
         ports = module_data.get("ports", {})
-        netnames = module_data.get("netnames", {})
 
         if not cells and not ports:
             raise GraphBuildError(f"Module '{module_name}' has no cells or ports")
@@ -124,7 +170,8 @@ class NetlistGraphBuilder:
             idx = len(node_map)
             node_map[cell_name] = idx
             cell_type = cell_data.get("type", "UNKNOWN")
-            node_types.append(cell_type.upper())
+            cell_type = _normalize_yosys_type(cell_type)
+            node_types.append(cell_type)
             node_names.append(cell_name)
 
         # Build wire-to-node connectivity
@@ -174,10 +221,17 @@ class NetlistGraphBuilder:
             fan_out[src] += 1
             fan_in[tgt] += 1
 
-        # Encode node features
+        # Encode node features (one-hot + basic, 26-dim with structural slots zeroed)
         fan_in_list = [fan_in.get(i, 0) for i in range(len(node_map))]
         fan_out_list = [fan_out.get(i, 0) for i in range(len(node_map))]
         x = self._node_encoder.encode_batch(node_types, fan_in_list, fan_out_list)
+
+        # Compute and fill structural features [19..25]
+        edges_list = list(zip(edge_sources, edge_targets))
+        struct_feats = _compute_structural_features(
+            node_names, edges_list, node_types,
+        )
+        x[:, VOCAB_SIZE + 4:] = struct_feats
 
         # Build edge_index tensor
         if edge_sources:
@@ -194,7 +248,12 @@ class NetlistGraphBuilder:
         features_info = NodeFeatures(
             dimensionality=self._node_encoder.feature_dim,
             vocabulary=self._node_encoder.vocabulary,
-            additional_features=["fan_in", "fan_out"],
+            additional_features=[
+                "fan_in", "fan_out", "depth", "is_seq",
+                "degree_centrality", "is_io_adjacent", "neighbor_type_entropy",
+                "rare_type_ratio", "local_fanout_anomaly",
+                "min_dist_to_input", "min_dist_to_output",
+            ],
         )
 
         return CircuitGraph(
@@ -207,11 +266,157 @@ class NetlistGraphBuilder:
         )
 
     def build_batch(
-        self, synthesis_results: list[SynthesisResult]
+        self, synthesis_results: list
     ) -> list[CircuitGraph]:
         """Build circuit graphs for multiple synthesis results."""
         graphs = []
         for result in synthesis_results:
             graph = self._build_from_json(result.json_netlist)
             graphs.append(graph)
+
         return graphs
+
+
+# ---------------------------------------------------------------------------
+# Structural feature computation (ported from training/train_local.py)
+# ---------------------------------------------------------------------------
+
+# Gate type vocabulary for entropy normalization
+_TYPE_VOCAB_SIZE = 15
+
+
+def _compute_structural_features(
+    nodes: list[str],
+    edges: list[tuple[int, int]],
+    node_types: list[str],
+) -> torch.Tensor:
+    """Compute 7 structural features per node.
+
+    Features:
+        0: degree_centrality
+        1: is_io_adjacent
+        2: neighbor_type_entropy
+        3: rare_type_ratio
+        4: local_fanout_anomaly
+        5: min_dist_to_input
+        6: min_dist_to_output
+    """
+    n = len(nodes)
+    feats = torch.zeros((n, 7), dtype=torch.float)
+    if n == 0:
+        return feats
+
+    # Build adjacency lists
+    adj_out: list[list[int]] = [[] for _ in range(n)]
+    adj_in: list[list[int]] = [[] for _ in range(n)]
+    for s, t in edges:
+        adj_out[s].append(t)
+        adj_in[t].append(s)
+
+    fi = [len(adj_in[i]) for i in range(n)]
+    fo = [len(adj_out[i]) for i in range(n)]
+    degrees = [fi[i] + fo[i] for i in range(n)]
+    max_deg = max(degrees) if degrees else 1
+
+    # Identify I/O nodes
+    io_set: set[int] = set()
+    input_nodes: list[int] = []
+    output_nodes: list[int] = []
+    for i, nt in enumerate(node_types):
+        if nt == "INPUT":
+            io_set.add(i)
+            input_nodes.append(i)
+        elif nt == "OUTPUT":
+            io_set.add(i)
+            output_nodes.append(i)
+
+    # Per-type fan-out statistics
+    type_fanouts: dict[str, list[int]] = {}
+    for i, nt in enumerate(node_types):
+        type_fanouts.setdefault(nt, []).append(fo[i])
+
+    type_mean_fo: dict[str, float] = {}
+    type_std_fo: dict[str, float] = {}
+    for nt, fos in type_fanouts.items():
+        mean = sum(fos) / len(fos)
+        type_mean_fo[nt] = mean
+        var = sum((x - mean) ** 2 for x in fos) / max(len(fos), 1)
+        type_std_fo[nt] = max(var ** 0.5, 1.0)
+
+    # Multi-source BFS from all inputs
+    dist_from_input = [float("inf")] * n
+    if input_nodes:
+        q: deque[int] = deque()
+        for s in input_nodes:
+            dist_from_input[s] = 0
+            q.append(s)
+
+        while q:
+            u = q.popleft()
+            for v in adj_out[u]:
+                if dist_from_input[v] > dist_from_input[u] + 1:
+                    dist_from_input[v] = dist_from_input[u] + 1
+                    q.append(v)
+
+    # Multi-source BFS from all outputs (reverse direction)
+    dist_from_output = [float("inf")] * n
+    if output_nodes:
+        q = deque()
+        for s in output_nodes:
+            dist_from_output[s] = 0
+            q.append(s)
+
+        while q:
+            u = q.popleft()
+            for v in adj_in[u]:
+                if dist_from_output[v] > dist_from_output[u] + 1:
+                    dist_from_output[v] = dist_from_output[u] + 1
+                    q.append(v)
+
+    max_dist = 50.0
+
+    for i in range(n):
+        # 0: degree centrality
+        feats[i, 0] = degrees[i] / max(max_deg, 1)
+
+        # 1: is_io_adjacent
+        neighbors = set(adj_out[i]) | set(adj_in[i])
+        feats[i, 1] = 1.0 if neighbors & io_set else 0.0
+
+        # 2: neighbor type entropy
+        if neighbors:
+            type_counts: dict[str, int] = {}
+            for nb in neighbors:
+                nt = node_types[nb]
+                type_counts[nt] = type_counts.get(nt, 0) + 1
+
+            total = sum(type_counts.values())
+            entropy = 0.0
+            for cnt in type_counts.values():
+                p = cnt / total
+                if p > 0:
+                    entropy -= p * math.log2(p)
+
+            feats[i, 2] = entropy / max(math.log2(_TYPE_VOCAB_SIZE), 1.0)
+
+        # 3: rare_type_ratio among neighbors
+        if neighbors:
+            rare_count = sum(1 for nb in neighbors if node_types[nb] in _RARE_TYPES)
+            feats[i, 3] = rare_count / len(neighbors)
+
+        # 4: local fan-out anomaly (z-score, clamped)
+        nt = node_types[i]
+        mean_fo_val = type_mean_fo.get(nt, 0.0)
+        std_fo_val = type_std_fo.get(nt, 1.0)
+        z = (fo[i] - mean_fo_val) / std_fo_val
+        feats[i, 4] = min(max(z / 3.0, -1.0), 1.0)
+
+        # 5: min distance to input (normalized)
+        d_in = dist_from_input[i]
+        feats[i, 5] = min(d_in, max_dist) / max_dist if d_in != float("inf") else 1.0
+
+        # 6: min distance to output (normalized)
+        d_out = dist_from_output[i]
+        feats[i, 6] = min(d_out, max_dist) / max_dist if d_out != float("inf") else 1.0
+
+    return feats
