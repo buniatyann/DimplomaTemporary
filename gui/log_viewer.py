@@ -41,6 +41,20 @@ class LogViewer(QPlainTextEdit):
     def log_alert(self, message: str) -> None:
         self._append("ALERT", message)
 
+    def append_plain(self, text: str) -> None:
+        """Append unformatted text (e.g. a full report) to the viewer."""
+        colour = self._COLOURS["INFO"]
+        fmt = QTextCharFormat()
+        fmt.setForeground(colour)
+
+        cursor = self.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        cursor.insertText(text + "\n", fmt)
+
+        if self._auto_scroll:
+            scrollbar = self.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+
     @Slot()
     def clear(self) -> None:  # type: ignore[override]
         super().clear()

@@ -100,6 +100,7 @@ class MainWindow(QMainWindow):
         self._file_explorer.files_added.connect(self._on_files_added)
         self._file_explorer.file_removed.connect(self._on_file_removed)
         self._file_explorer.selection_changed.connect(self._toolbar.update_selection_state)
+        self._file_explorer.file_double_clicked.connect(self._on_file_double_clicked)
 
         # App state → toolbar
         self._state_mgr.state_changed.connect(self._on_state_changed)
@@ -227,6 +228,28 @@ class MainWindow(QMainWindow):
     def _on_state_changed(self, state: AppState) -> None:
         processing = state in (AppState.PROCESSING, AppState.CANCELLING)
         self._toolbar.set_processing(processing)
+
+    # ------------------------------------------------------------------
+    # Double-click → show report in log viewer
+    # ------------------------------------------------------------------
+    def _on_file_double_clicked(self, path: str) -> None:
+        result = self._last_results.get(path)
+        if result is None:
+            self._log_viewer.log_warning(
+                f"No report for {Path(path).name}. Run detection first."
+            )
+            return
+
+        report_text = result.get("report_text", "")
+        if not report_text:
+            self._log_viewer.log_warning(
+                f"No report text available for {Path(path).name}."
+            )
+            return
+
+        self._log_viewer.clear()
+        self._log_viewer.log_info(f"Report for {Path(path).name}:")
+        self._log_viewer.append_plain(report_text)
 
     # ------------------------------------------------------------------
     # Export

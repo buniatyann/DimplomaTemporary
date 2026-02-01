@@ -91,6 +91,7 @@ class FileExplorer(QTreeView):
     files_added = Signal(list)          # list[str]
     file_removed = Signal(str)
     selection_changed = Signal(bool)    # True if any file is checked
+    file_double_clicked = Signal(str)   # path — emitted on double-click of a file item
 
     def __init__(self, state_mgr: AppStateManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -120,6 +121,9 @@ class FileExplorer(QTreeView):
 
         # Propagate dir checkbox → children
         self._model.itemChanged.connect(self._on_item_changed)
+
+        # Double-click → show report
+        self.doubleClicked.connect(self._on_double_click)
 
         # ── Section headers ──
         self._files_header = _make_section_header("Files")
@@ -351,6 +355,19 @@ class FileExplorer(QTreeView):
         # Notify whether any files are now checked
         if kind in ("file", "dir"):
             self.selection_changed.emit(len(self.checked_paths()) > 0)
+
+    # ------------------------------------------------------------------
+    # Double-click → emit file path
+    # ------------------------------------------------------------------
+    def _on_double_click(self, index) -> None:  # noqa: ANN001
+        item = self._model.itemFromIndex(index)
+        if item is None:
+            return
+        if item.data(_ROLE_KIND) != "file":
+            return
+        path = item.data(_ROLE_PATH)
+        if path:
+            self.file_double_clicked.emit(path)
 
     # ------------------------------------------------------------------
     # Internal
