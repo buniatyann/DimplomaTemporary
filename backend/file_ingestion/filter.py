@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from trojan_detector.backend.file_ingestion.models import FileType
+from backend.file_ingestion.models import FileType
 
 EXTENSION_MAP: dict[str, FileType] = {
     ".v": FileType.VERILOG,
