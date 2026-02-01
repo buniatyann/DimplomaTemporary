@@ -71,7 +71,7 @@ class DetectionWorker(QThread):
             from backend.api.detector_api import DetectorAPI
 
             api = DetectorAPI()
-            result = api.analyze_file(path)
+            result = api.analyze_file(path, export_formats=["text"])
             return _extract_result(result)
         except Exception:
             logger.debug("Backend unavailable, using stub", exc_info=True)
@@ -86,28 +86,97 @@ def _extract_result(raw: dict[str, Any]) -> dict[str, Any]:
     """Pull the fields the GUI cares about from a full pipeline result."""
     report = raw.get("report", {})
     classification = report.get("classification_results", {})
+
+    # Build a human-readable report text from the report dict
+    report_text = _build_report_text(report)
+
     return {
         "is_trojan": classification.get("verdict", "CLEAN") != "CLEAN",
         "confidence": classification.get("confidence", 0.0),
         "verdict": classification.get("verdict", "N/A"),
         "export_paths": raw.get("export_paths", []),
+        "report_text": report_text,
         "raw": raw,
     }
+
+
+def _build_report_text(report: dict[str, Any]) -> str:
+    """Render a report dict into the text exporter format for GUI display."""
+    try:
+        from backend.analysis_summarizer.models import AnalysisReport
+        from backend.analysis_summarizer.exporters.text_exporter import TextExporter
+
+        analysis_report = AnalysisReport(**report)
+        return TextExporter().render_to_string(analysis_report)
+    except Exception:
+        return _fallback_report_text(report)
+
+
+def _fallback_report_text(report: dict[str, Any]) -> str:
+    """Minimal report text when the full exporter is unavailable."""
+    lines: list[str] = ["=" * 60, "  DETECTION REPORT", "=" * 60]
+
+    fi = report.get("file_info", {})
+    for fp in fi.get("file_paths", []):
+        lines.append(f"  File: {fp}")
+
+    cr = report.get("classification_results", {})
+    if cr.get("verdict"):
+        lines.append(f"  Verdict:    {cr['verdict']}")
+        lines.append(f"  Confidence: {cr.get('confidence', 0):.4f}")
+
+    errors = report.get("errors", [])
+    if errors:
+        lines.append("")
+        lines.append("  Errors:")
+        for e in errors:
+            lines.append(f"    - {e}")
+
+    lines.append("=" * 60)
+    return "\n".join(lines)
 
 
 def _stub_analyse(path: str) -> dict[str, Any]:
     """Deterministic stub when the real backend is not available."""
     import hashlib
     import time
+    from datetime import datetime
 
     time.sleep(1.5)  # simulate processing delay
     digest = int(hashlib.md5(path.encode()).hexdigest(), 16)  # noqa: S324
     is_trojan = digest % 3 == 0  # ~33 % flagged for demo purposes
     confidence = 0.85 + (digest % 15) / 100.0 if is_trojan else 0.10 + (digest % 20) / 100.0
+    confidence = round(min(confidence, 0.99), 4)
+    verdict = "TROJAN" if is_trojan else "CLEAN"
+    name = Path(path).name
+
+    report_text = (
+        f"{'=' * 72}\n"
+        f"  HARDWARE TROJAN DETECTION REPORT\n"
+        f"{'=' * 72}\n"
+        f"  Generated: {datetime.now().isoformat()}\n"
+        f"\n"
+        f"--- File Information {'─' * 44}\n"
+        f"  File: {path}\n"
+        f"\n"
+        f"--- Syntax Analysis {'─' * 44}\n"
+        f"  No syntax errors.\n"
+        f"\n"
+        f"--- Synthesis {'─' * 50}\n"
+        f"  No synthesis errors.\n"
+        f"\n"
+        f"--- Classification Results {'─' * 38}\n"
+        f"  Verdict:           {verdict}\n"
+        f"  Confidence:        {confidence:.4f}\n"
+        f"\n"
+        f"{'=' * 72}"
+    )
+
     return {
         "is_trojan": is_trojan,
-        "confidence": round(min(confidence, 0.99), 4),
-        "verdict": "TROJAN" if is_trojan else "CLEAN",
+        "confidence": confidence,
+        "verdict": verdict,
         "export_paths": [],
+        "report_text": report_text,
         "raw": {},
     }
