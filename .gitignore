@@ -205,3 +205,13 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Pyverilog artifacts
+parser.out
+parsetab.py
+
+# Generated reports
+reports/
+
+# Scripts specifically for my desktop
+my_scripts/
