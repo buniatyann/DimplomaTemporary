@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from analysis_summarizer.models import AnalysisReport
+from backend.analysis_summarizer.models import AnalysisReport
 
 
 class JsonExporter:
