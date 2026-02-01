@@ -1,0 +1,294 @@
+"""Main application window wiring all GUI components together."""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QMainWindow,
+    QSplitter,
+    QStatusBar,
+    QWidget,
+)
+
+from gui.config import GUIConfig
+from gui.file_explorer import FileExplorer
+from gui.log_viewer import LogViewer
+from gui.state import AppState, AppStateManager, FileStatus
+from gui.toolbar import Toolbar
+from gui.workers import DetectionWorker
+
+logger = logging.getLogger(__name__)
+
+
+class MainWindow(QMainWindow):
+    """Top-level window: toolbar + splitter(file_explorer | log_viewer) + status bar."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Hardware Trojan Detector")
+
+        self._config = GUIConfig.load()
+        self._state_mgr = AppStateManager(self)
+        self._worker: DetectionWorker | None = None
+        self._last_results: dict[str, dict[str, Any]] = {}
+
+        # ── Load stylesheet ──
+        self._apply_stylesheet()
+
+        # ── Widgets ──
+        self._toolbar = Toolbar(self)
+        self.addToolBar(self._toolbar)
+
+        self._file_explorer = FileExplorer(self._state_mgr, self)
+        self._log_viewer = LogViewer(max_lines=self._config.max_log_lines, parent=self)
+        self._log_viewer.auto_scroll = self._config.auto_scroll
+
+        # ── Layout ──
+        splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        splitter.addWidget(self._file_explorer)
+        splitter.addWidget(self._log_viewer)
+        splitter.setSizes(self._config.splitter_sizes)
+        self._splitter = splitter
+        self.setCentralWidget(splitter)
+
+        # ── Status bar ──
+        self._status_bar = QStatusBar(self)
+        self.setStatusBar(self._status_bar)
+        self._status_bar.showMessage("Ready")
+
+        # ── Restore geometry ──
+        self.resize(self._config.window_width, self._config.window_height)
+
+        # ── Connect signals ──
+        self._connect_signals()
+
+        self._log_viewer.log_info("Hardware Trojan Detector ready.")
+
+    # ------------------------------------------------------------------
+    # Stylesheet
+    # ------------------------------------------------------------------
+    def _apply_stylesheet(self) -> None:
+        qss_path = Path(__file__).parent / "styles" / "dark_theme.qss"
+        if qss_path.exists():
+            self.setStyleSheet(qss_path.read_text(encoding="utf-8"))
+        else:
+            logger.warning("Dark theme stylesheet not found at %s", qss_path)
+
+    # ------------------------------------------------------------------
+    # Signal wiring
+    # ------------------------------------------------------------------
+    def _connect_signals(self) -> None:
+        tb = self._toolbar
+
+        # Toolbar → actions
+        tb.upload_file_clicked.connect(self._file_explorer.add_files_dialog)
+        tb.upload_folder_clicked.connect(self._file_explorer.add_folder_dialog)
+        tb.run_all_clicked.connect(self._start_detection_all)
+        tb.run_detection_clicked.connect(self._start_detection)
+        tb.stop_clicked.connect(self._stop_detection)
+        tb.remove_checked_clicked.connect(self._remove_checked)
+        tb.clear_log_clicked.connect(self._log_viewer.clear)
+        tb.export_results_clicked.connect(self._export_results)
+        tb.toggle_paths_clicked.connect(self._file_explorer.toggle_absolute_paths)
+
+        # File explorer → log feedback
+        self._file_explorer.files_added.connect(self._on_files_added)
+        self._file_explorer.file_removed.connect(self._on_file_removed)
+        self._file_explorer.selection_changed.connect(self._toolbar.update_selection_state)
+
+        # App state → toolbar
+        self._state_mgr.state_changed.connect(self._on_state_changed)
+
+    # ------------------------------------------------------------------
+    # File events
+    # ------------------------------------------------------------------
+    def _on_files_added(self, paths: list[str]) -> None:
+        for p in paths:
+            self._log_viewer.log_info(f"Added: {Path(p).name}")
+        self._status_bar.showMessage(f"{len(self._file_explorer.all_paths())} file(s) loaded")
+
+    def _on_file_removed(self, path: str) -> None:
+        self._log_viewer.log_info(f"Removed: {Path(path).name}")
+        self._last_results.pop(path, None)
+
+    def _remove_checked(self) -> None:
+        checked = self._file_explorer.checked_paths()
+        if not checked:
+            self._log_viewer.log_warning("No checked files to remove.")
+            return
+        self._file_explorer.remove_checked()
+        self._status_bar.showMessage(f"{len(self._file_explorer.all_paths())} file(s) loaded")
+
+    # ------------------------------------------------------------------
+    # Detection lifecycle
+    # ------------------------------------------------------------------
+    def _start_detection_all(self) -> None:
+        paths = self._file_explorer.all_paths()
+        if not paths:
+            self._log_viewer.log_warning("No files loaded.")
+            return
+        self._run_detection(paths)
+
+    def _start_detection(self) -> None:
+        paths = self._file_explorer.checked_paths()
+        if not paths:
+            self._log_viewer.log_warning("No checked files to analyse.")
+            return
+        self._run_detection(paths)
+
+    def _run_detection(self, paths: list[str]) -> None:
+        # Reset statuses for target files
+        for p in paths:
+            self._state_mgr.set_file_status(p, FileStatus.PENDING)
+
+        self._state_mgr.set_state(AppState.PROCESSING)
+        self._log_viewer.log_info(f"Starting detection on {len(paths)} file(s)...")
+
+        self._worker = DetectionWorker(paths, parent=self)
+        self._worker.file_started.connect(self._on_file_started)
+        self._worker.file_completed.connect(self._on_file_completed)
+        self._worker.file_error.connect(self._on_file_error)
+        self._worker.progress_updated.connect(self._on_progress)
+        self._worker.all_completed.connect(self._on_all_completed)
+        self._worker.start()
+
+    def _stop_detection(self) -> None:
+        if self._worker:
+            self._state_mgr.set_state(AppState.CANCELLING)
+            self._log_viewer.log_warning("Cancelling detection...")
+            self._worker.cancel()
+
+    # ------------------------------------------------------------------
+    # Worker callbacks (run on main thread via signals)
+    # ------------------------------------------------------------------
+    def _on_file_started(self, path: str) -> None:
+        self._state_mgr.set_file_status(path, FileStatus.PROCESSING)
+        self._log_viewer.log_info(f"Processing: {Path(path).name}")
+
+    def _on_file_completed(self, path: str, result: dict[str, Any]) -> None:
+        is_trojan = result.get("is_trojan", False)
+        confidence = result.get("confidence", 0.0)
+        verdict = result.get("verdict", "N/A")
+
+        if is_trojan:
+            self._state_mgr.set_file_status(path, FileStatus.INFECTED)
+            self._log_viewer.log_alert(
+                f"{Path(path).name}: {verdict} (confidence {confidence:.1%})"
+            )
+        else:
+            self._state_mgr.set_file_status(path, FileStatus.CLEAN)
+            self._log_viewer.log_ok(
+                f"{Path(path).name}: {verdict} (confidence {confidence:.1%})"
+            )
+
+        self._last_results[path] = result
+
+        # Update report path in file explorer
+        export_paths = result.get("export_paths", [])
+        if export_paths:
+            self._file_explorer.set_report_path(path, export_paths[0])
+        else:
+            # Show where report would be saved
+            stem = Path(path).stem
+            fmt = self._toolbar.export_format
+            ext = {"json": ".json", "text": ".txt", "pdf": ".pdf"}.get(fmt, ".json")
+            self._file_explorer.set_report_path(
+                path, f"{stem}_report{ext}"
+            )
+
+    def _on_file_error(self, path: str, error_msg: str) -> None:
+        self._state_mgr.set_file_status(path, FileStatus.ERROR)
+        self._log_viewer.log_alert(f"Error on {Path(path).name}: {error_msg}")
+
+    def _on_progress(self, current: int, total: int) -> None:
+        self._status_bar.showMessage(f"Processing {current}/{total}...")
+
+    def _on_all_completed(self) -> None:
+        self._state_mgr.set_state(AppState.IDLE)
+        total = len(self._last_results)
+        infected = sum(
+            1 for r in self._last_results.values() if r.get("is_trojan")
+        )
+        self._log_viewer.log_info(
+            f"Detection complete. {infected}/{total} file(s) flagged."
+        )
+        self._status_bar.showMessage(
+            f"Done — {infected} infected / {total} total"
+        )
+
+    # ------------------------------------------------------------------
+    # State transitions
+    # ------------------------------------------------------------------
+    def _on_state_changed(self, state: AppState) -> None:
+        processing = state in (AppState.PROCESSING, AppState.CANCELLING)
+        self._toolbar.set_processing(processing)
+
+    # ------------------------------------------------------------------
+    # Export
+    # ------------------------------------------------------------------
+    def _export_results(self) -> None:
+        if not self._last_results:
+            self._log_viewer.log_warning("No results to export. Run detection first.")
+            return
+
+        folder = QFileDialog.getExistingDirectory(self, "Export Directory")
+        if not folder:
+            return
+
+        fmt = self._toolbar.export_format
+        ext = {"json": ".json", "text": ".txt", "pdf": ".pdf"}.get(fmt, ".json")
+        export_path = Path(folder) / f"trojan_detection_results{ext}"
+
+        try:
+            import json
+
+            serialisable = {}
+            for path, result in self._last_results.items():
+                serialisable[path] = {
+                    "is_trojan": result.get("is_trojan"),
+                    "confidence": result.get("confidence"),
+                    "verdict": result.get("verdict"),
+                    "export_paths": result.get("export_paths", []),
+                }
+
+            if fmt == "json":
+                export_path.write_text(
+                    json.dumps(serialisable, indent=2), encoding="utf-8"
+                )
+            else:
+                # Text / PDF fallback — write as plain text summary
+                lines = [f"Hardware Trojan Detection Results", "=" * 40, ""]
+                for path, info in serialisable.items():
+                    verdict = info.get("verdict", "N/A")
+                    conf = info.get("confidence", 0.0)
+                    lines.append(f"File: {path}")
+                    lines.append(f"  Verdict:    {verdict}")
+                    lines.append(f"  Confidence: {conf:.1%}")
+                    lines.append("")
+                export_path.write_text("\n".join(lines), encoding="utf-8")
+
+            self._log_viewer.log_ok(f"Results exported to {export_path}")
+        except Exception as exc:
+            self._log_viewer.log_alert(f"Export failed: {exc}")
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+    def closeEvent(self, event) -> None:  # noqa: ANN001
+        self._config.window_width = self.width()
+        self._config.window_height = self.height()
+        self._config.splitter_sizes = self._splitter.sizes()
+        self._config.auto_scroll = self._log_viewer.auto_scroll
+        self._config.save()
+
+        # Ensure worker shuts down
+        if self._worker and self._worker.isRunning():
+            self._worker.cancel()
+            self._worker.wait(3000)
+
+        super().closeEvent(event)

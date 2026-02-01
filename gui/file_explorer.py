@@ -1,0 +1,375 @@
+"""Checkbox-based file explorer with Files and Directories sections.
+
+Layout:
+    ── Files ──────────────────────
+    [x] ⚪  c7552.v
+    [ ] 🟢  c2670_T001.v
+    ── Directories ────────────────
+    [x] 📁  c2670
+        [x] ⚪  c2670_T000.v
+        [ ] 🔴  c2670_T001.v
+
+Checkboxes allow selecting individual files (or whole directories)
+for running detection or removing them.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QMimeData, Qt, Signal
+from PySide6.QtGui import (
+    QAction,
+    QBrush,
+    QColor,
+    QDragEnterEvent,
+    QDropEvent,
+    QFont,
+    QStandardItem,
+    QStandardItemModel,
+)
+from PySide6.QtWidgets import QFileDialog, QMenu, QTreeView, QWidget
+
+from gui.state import FILE_STATUS_ICONS, AppStateManager, FileStatus
+
+_VERILOG_FILTER = "Verilog Files (*.v *.sv *.vh)"
+_VERILOG_SUFFIXES = {".v", ".sv", ".vh"}
+
+# Role constants for item data
+_ROLE_PATH = Qt.ItemDataRole.UserRole          # absolute file/dir path
+_ROLE_KIND = Qt.ItemDataRole.UserRole + 1      # "file", "dir", "section"
+
+
+def _make_section_header(title: str) -> QStandardItem:
+    """Non-selectable, bold section separator."""
+    item = QStandardItem(f"\u2500\u2500 {title} \u2500\u2500")
+    item.setSelectable(False)
+    item.setEditable(False)
+    item.setEnabled(False)
+    item.setData("section", _ROLE_KIND)
+    font = QFont()
+    font.setBold(True)
+    item.setFont(font)
+    item.setForeground(QBrush(QColor("#808080")))
+    return item
+
+
+def _make_file_item(path: str, show_absolute: bool, status: FileStatus) -> QStandardItem:
+    """Checkable file row — no children, no expand triangle."""
+    display = path if show_absolute else Path(path).name
+    icon = FILE_STATUS_ICONS[status]
+    item = QStandardItem(f"{icon}  {display}")
+    item.setData(path, _ROLE_PATH)
+    item.setData("file", _ROLE_KIND)
+    item.setToolTip(path)
+    item.setCheckable(True)
+    item.setCheckState(Qt.CheckState.Checked)
+    return item
+
+
+def _make_dir_item(dir_path: str) -> QStandardItem:
+    """Checkable directory row — children are file items."""
+    dir_name = Path(dir_path).name or dir_path
+    item = QStandardItem(f"\U0001f4c1  {dir_name}")
+    item.setData(dir_path, _ROLE_PATH)
+    item.setData("dir", _ROLE_KIND)
+    item.setToolTip(dir_path)
+    item.setCheckable(True)
+    item.setCheckState(Qt.CheckState.Checked)
+    font = QFont()
+    font.setBold(True)
+    item.setFont(font)
+    return item
+
+
+class FileExplorer(QTreeView):
+    """Left-panel tree with checkbox selection for files and directories."""
+
+    files_added = Signal(list)          # list[str]
+    file_removed = Signal(str)
+    selection_changed = Signal(bool)    # True if any file is checked
+
+    def __init__(self, state_mgr: AppStateManager, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._state_mgr = state_mgr
+        self._show_absolute = False
+
+        self._model = QStandardItemModel()
+        self._model.setHorizontalHeaderLabels(["Files"])
+        self.setModel(self._model)
+
+        self.setAlternatingRowColors(True)
+        self.setSelectionMode(self.SelectionMode.ExtendedSelection)
+        self.setEditTriggers(self.EditTrigger.NoEditTriggers)
+        self.setRootIsDecorated(True)
+        self.setIndentation(20)
+
+        # Drag-drop
+        self.setAcceptDrops(True)
+        self.setDragDropMode(self.DragDropMode.DropOnly)
+
+        # State signals
+        self._state_mgr.file_status_changed.connect(self._on_status_changed)
+
+        # Context menu
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
+
+        # Propagate dir checkbox → children
+        self._model.itemChanged.connect(self._on_item_changed)
+
+        # ── Section headers ──
+        self._files_header = _make_section_header("Files")
+        self._dirs_header = _make_section_header("Directories")
+        self._model.appendRow([self._files_header])
+        self._model.appendRow([self._dirs_header])
+
+        # ── Tracking ──
+        self._file_items: dict[str, QStandardItem] = {}      # Files section
+        self._dir_items: dict[str, QStandardItem] = {}        # dir nodes
+        self._dir_file_items: dict[str, QStandardItem] = {}   # files inside dirs
+        self._all_paths: set[str] = set()
+
+    # ------------------------------------------------------------------
+    # Add individual files (Files section)
+    # ------------------------------------------------------------------
+    def add_files(self, paths: list[str]) -> list[str]:
+        added: list[str] = []
+        for p in paths:
+            if p in self._all_paths:
+                continue
+            item = _make_file_item(p, self._show_absolute, FileStatus.PENDING)
+            self._files_header.appendRow([item])
+            self._file_items[p] = item
+            self._all_paths.add(p)
+            self._state_mgr.set_file_status(p, FileStatus.PENDING)
+            added.append(p)
+        if added:
+            self.files_added.emit(added)
+        return added
+
+    # ------------------------------------------------------------------
+    # Add folder (Directories section)
+    # ------------------------------------------------------------------
+    def add_folder(self, folder_paths: list[str]) -> list[str]:
+        added: list[str] = []
+        dirs: dict[str, list[str]] = {}
+        for p in folder_paths:
+            if p in self._all_paths:
+                continue
+            parent = str(Path(p).parent)
+            dirs.setdefault(parent, []).append(p)
+            added.append(p)
+
+        for dir_path, file_paths in sorted(dirs.items()):
+            if dir_path not in self._dir_items:
+                dir_item = _make_dir_item(dir_path)
+                self._dirs_header.appendRow([dir_item])
+                self._dir_items[dir_path] = dir_item
+            else:
+                dir_item = self._dir_items[dir_path]
+
+            for fp in sorted(file_paths):
+                child = _make_file_item(fp, self._show_absolute, FileStatus.PENDING)
+                dir_item.appendRow([child])
+                self._dir_file_items[fp] = child
+                self._all_paths.add(fp)
+                self._state_mgr.set_file_status(fp, FileStatus.PENDING)
+
+        if added:
+            self.files_added.emit(added)
+        return added
+
+    # ------------------------------------------------------------------
+    # Dialogs
+    # ------------------------------------------------------------------
+    def add_files_dialog(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Select Verilog Files", self._last_dir(), _VERILOG_FILTER,
+        )
+        if paths:
+            self.add_files(paths)
+
+    def add_folder_dialog(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select Folder", self._last_dir()
+        )
+        if folder:
+            paths = [
+                str(f)
+                for f in Path(folder).rglob("*")
+                if f.suffix.lower() in _VERILOG_SUFFIXES
+            ]
+            self.add_folder(sorted(paths))
+
+    # ------------------------------------------------------------------
+    # Checked / all paths
+    # ------------------------------------------------------------------
+    def checked_paths(self) -> list[str]:
+        """Return paths of all checked file items (both sections)."""
+        result: list[str] = []
+        for path, item in self._file_items.items():
+            if item.checkState() == Qt.CheckState.Checked:
+                result.append(path)
+        for path, item in self._dir_file_items.items():
+            if item.checkState() == Qt.CheckState.Checked:
+                result.append(path)
+        return result
+
+    def all_paths(self) -> list[str]:
+        return list(self._all_paths)
+
+    # ------------------------------------------------------------------
+    # Remove checked items
+    # ------------------------------------------------------------------
+    def remove_checked(self) -> None:
+        """Remove all checked files (and empty dir nodes)."""
+        to_remove = self.checked_paths()
+        for path in to_remove:
+            # Files section
+            item = self._file_items.pop(path, None)
+            if item is not None:
+                parent = item.parent() or self._model.invisibleRootItem()
+                parent.removeRow(item.row())
+
+            # Directories section
+            dir_child = self._dir_file_items.pop(path, None)
+            if dir_child is not None:
+                dir_parent = dir_child.parent()
+                if dir_parent:
+                    dir_parent.removeRow(dir_child.row())
+                    if dir_parent.rowCount() == 0:
+                        dp = dir_parent.data(_ROLE_PATH)
+                        self._dir_items.pop(dp, None)
+                        gp = dir_parent.parent() or self._model.invisibleRootItem()
+                        gp.removeRow(dir_parent.row())
+
+            self._all_paths.discard(path)
+            self._state_mgr.remove_file(path)
+            self.file_removed.emit(path)
+
+    # ------------------------------------------------------------------
+    # Absolute path toggle
+    # ------------------------------------------------------------------
+    def toggle_absolute_paths(self) -> None:
+        self._show_absolute = not self._show_absolute
+        for path, item in self._file_items.items():
+            self._refresh_item_text(path, item)
+        for path, item in self._dir_file_items.items():
+            self._refresh_item_text(path, item)
+
+    @property
+    def showing_absolute(self) -> bool:
+        return self._show_absolute
+
+    # ------------------------------------------------------------------
+    # Report path (unused now but kept for API compat)
+    # ------------------------------------------------------------------
+    def set_report_path(self, file_path: str, report_path: str) -> None:
+        pass  # no detail rows any more
+
+    # ------------------------------------------------------------------
+    # Drag-drop
+    # ------------------------------------------------------------------
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        mime: QMimeData = event.mimeData()
+        if not mime.hasUrls():
+            return
+        single: list[str] = []
+        folder: list[str] = []
+        for url in mime.urls():
+            local = url.toLocalFile()
+            p = Path(local)
+            if p.is_file() and p.suffix.lower() in _VERILOG_SUFFIXES:
+                single.append(str(p))
+            elif p.is_dir():
+                folder.extend(
+                    str(f) for f in p.rglob("*")
+                    if f.suffix.lower() in _VERILOG_SUFFIXES
+                )
+        if single:
+            self.add_files(sorted(single))
+        if folder:
+            self.add_folder(sorted(folder))
+        event.acceptProposedAction()
+
+    # ------------------------------------------------------------------
+    # Context menu
+    # ------------------------------------------------------------------
+    def _show_context_menu(self, pos) -> None:  # noqa: ANN001
+        menu = QMenu(self)
+
+        remove_act = QAction("Remove Checked", self)
+        remove_act.triggered.connect(self.remove_checked)
+        menu.addAction(remove_act)
+
+        open_folder_act = QAction("Open Containing Folder", self)
+        open_folder_act.triggered.connect(self._open_containing_folder)
+        menu.addAction(open_folder_act)
+
+        menu.exec(self.viewport().mapToGlobal(pos))
+
+    def _open_containing_folder(self) -> None:
+        # Use the item under cursor
+        idx = self.currentIndex()
+        item = self._model.itemFromIndex(idx)
+        if not item:
+            return
+        path = item.data(_ROLE_PATH)
+        if not path:
+            return
+        folder = str(Path(path).parent) if item.data(_ROLE_KIND) == "file" else path
+        if sys.platform == "linux":
+            subprocess.Popen(["xdg-open", folder])  # noqa: S603, S607
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", folder])  # noqa: S603, S607
+        else:
+            os.startfile(folder)  # type: ignore[attr-defined]  # noqa: S606
+
+    # ------------------------------------------------------------------
+    # Dir checkbox → propagate to children
+    # ------------------------------------------------------------------
+    def _on_item_changed(self, item: QStandardItem) -> None:
+        kind = item.data(_ROLE_KIND)
+        if kind == "dir":
+            state = item.checkState()
+            self._model.itemChanged.disconnect(self._on_item_changed)
+            for row in range(item.rowCount()):
+                child = item.child(row, 0)
+                if child:
+                    child.setCheckState(state)
+            self._model.itemChanged.connect(self._on_item_changed)
+        # Notify whether any files are now checked
+        if kind in ("file", "dir"):
+            self.selection_changed.emit(len(self.checked_paths()) > 0)
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+    def _refresh_item_text(self, path: str, item: QStandardItem) -> None:
+        status = self._state_mgr.file_status(path)
+        icon = FILE_STATUS_ICONS[status]
+        display = path if self._show_absolute else Path(path).name
+        item.setText(f"{icon}  {display}")
+
+    def _on_status_changed(self, path: str, status: FileStatus) -> None:
+        item = self._file_items.get(path)
+        if item is not None:
+            self._refresh_item_text(path, item)
+        dir_child = self._dir_file_items.get(path)
+        if dir_child is not None:
+            self._refresh_item_text(path, dir_child)
+
+    def _last_dir(self) -> str:
+        from gui.config import GUIConfig
+        cfg = GUIConfig.load()
+        return cfg.last_directory or str(Path.home())
