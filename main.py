@@ -1,4 +1,8 @@
-"""CLI entry point for the hardware trojan detection system."""
+"""CLI entry point for the hardware trojan detection system.
+
+When invoked without arguments the PySide6 GUI is launched.
+Pass a file/directory path to use the CLI pipeline directly.
+"""
 
 from __future__ import annotations
 
@@ -6,10 +10,6 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-
-from backend.analysis_summarizer.exporters.text_exporter import TextExporter
-from backend.analysis_summarizer.models import AnalysisReport
-from backend.core.pipeline import DetectionPipeline
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -19,8 +19,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "input",
+        nargs="?",
         type=Path,
-        help="Path to a Verilog file or directory of Verilog files.",
+        default=None,
+        help="Path to a Verilog file or directory. Omit to launch the GUI.",
     )
     parser.add_argument(
         "-o",
@@ -93,6 +95,17 @@ def progress_printer(stage: str, current: int, total: int) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     setup_logging(args.verbose)
+
+    # No input path → launch the GUI
+    if args.input is None:
+        from gui.main import main as gui_main
+
+        return gui_main()
+
+    # CLI mode
+    from backend.analysis_summarizer.exporters.text_exporter import TextExporter
+    from backend.analysis_summarizer.models import AnalysisReport
+    from backend.core.pipeline import DetectionPipeline
 
     input_path: Path = args.input.resolve()
     output_dir: Path = args.output_dir.resolve()
