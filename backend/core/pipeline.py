@@ -64,7 +64,9 @@ class DetectionPipeline:
         if export_formats is None:
             export_formats = ["json"]
         if output_dir is None:
-            output_dir = Path(".")
+            output_dir = Path(__file__).resolve().parent.parent.parent / "reports"
+        
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         history = History()
         total_stages = len(self.STAGE_NAMES)
