@@ -1,0 +1,506 @@
+"""Ensemble classifier using cascade + weighted average over GCN, GAT, GIN."""
+
+from __future__ import annotations
+
+import logging
+import re
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import torch
+import torch.nn.functional as F
+
+from backend.core.exceptions import ClassificationError
+from backend.core.history import History
+from backend.core.outcome import StageOutcome
+from backend.netlist_graph_builder.models import CircuitGraph
+from backend.trojan_classifier.architectures.gat import GATClassifier
+from backend.trojan_classifier.architectures.gcn import GCNClassifier
+from backend.trojan_classifier.architectures.gin import GINClassifier
+from backend.trojan_classifier.models import (
+    ClassificationResult,
+    TrojanLocation,
+    TrojanVerdict,
+)
+
+if TYPE_CHECKING:
+    from backend.syntax_parser.models import ParsedModule
+
+logger = logging.getLogger(__name__)
+
+STAGE = "trojan_classifier"
+
+WEIGHTS_DIR = Path(__file__).parent / "weights"
+
+ARCHITECTURE_MAP: dict[str, type[torch.nn.Module]] = {
+    "gcn": GCNClassifier,
+    "gat": GATClassifier,
+    "gin": GINClassifier,
+}
+
+# Default model weights for weighted averaging (tunable per validation set).
+# GIN gets a slight edge for its stronger graph-isomorphism properties.
+DEFAULT_WEIGHTS: dict[str, float] = {
+    "gcn": 0.30,
+    "gat": 0.35,
+    "gin": 0.35,
+}
+
+# Cascade: if the first model is this confident, skip the rest.
+DEFAULT_CASCADE_THRESHOLD = 0.92
+
+# Node-level suspicion threshold for location reporting.
+SUSPICION_THRESHOLD = 0.3
+
+# Percentage of trojan nodes to trigger high-risk alert.
+HIGH_RISK_THRESHOLD = 5.0
+
+# Order in which models are evaluated in cascade (cheapest first).
+CASCADE_ORDER = ["gcn", "gin", "gat"]
+
+
+class EnsembleClassifier:
+    """Cascade + weighted-average ensemble over separately trained GCN, GAT, GIN.
+
+    Graph-level detection:
+        Runs models in cascade order (cheapest first).  If the first model's
+        confidence exceeds ``cascade_threshold``, the remaining models are
+        skipped.  Otherwise all models run and their graph-level trojan
+        probabilities are combined via a weighted average.
+
+    Node-level detection:
+        Node-level softmax outputs from every model that ran are combined
+        with the same weights.  The resulting per-node scores are used to
+        locate suspicious gates, which are then mapped back to source
+        file:line via the parsed module data.
+    """
+
+    def __init__(
+        self,
+        history: History,
+        model_weights: dict[str, float] | None = None,
+        cascade_threshold: float = DEFAULT_CASCADE_THRESHOLD,
+        confidence_threshold: float = 0.7,
+        suspicion_threshold: float = SUSPICION_THRESHOLD,
+        risk_threshold: float = HIGH_RISK_THRESHOLD,
+        device: str | None = None,
+    ) -> None:
+        self._history = history
+        self._model_weights = model_weights or dict(DEFAULT_WEIGHTS)
+        self._cascade_threshold = cascade_threshold
+        self._confidence_threshold = confidence_threshold
+        self._suspicion_threshold = suspicion_threshold
+        self._risk_threshold = risk_threshold
+        self._model_version = "0.1.0"
+        self._parsed_modules: list[ParsedModule] | None = None
+
+        if device is None:
+            self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self._device = torch.device(device)
+
+        # Lazily loaded models: arch_name -> nn.Module
+        self._models: dict[str, torch.nn.Module] = {}
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def set_parsed_modules(self, modules: list[ParsedModule]) -> None:
+        """Set parsed module data for source location resolution."""
+        self._parsed_modules = modules
+
+    def process(
+        self,
+        circuit_graph: CircuitGraph,
+        parsed_modules: list[ParsedModule] | None = None,
+    ) -> StageOutcome[ClassificationResult]:
+        """Run ensemble classification on a circuit graph.
+
+        Args:
+            circuit_graph: CircuitGraph from netlist_graph_builder.
+            parsed_modules: Optional parsed modules for source location resolution.
+
+        Returns:
+            StageOutcome wrapping a ClassificationResult.
+        """
+        if parsed_modules is not None:
+            self._parsed_modules = parsed_modules
+
+        self._history.begin_stage(STAGE)
+        start = time.time()
+
+        # Load all model weights up front so failures are caught early.
+        try:
+            self._load_models(circuit_graph)
+        except ClassificationError as e:
+            self._history.error(STAGE, str(e), data=e.context)
+            self._history.end_stage(STAGE, status="failed")
+            return StageOutcome.fail(str(e), stage_name=STAGE)
+
+        try:
+            result = self._classify_ensemble(circuit_graph)
+        except Exception as e:
+            msg = f"Ensemble classification failed: {e}"
+            self._history.error(STAGE, msg)
+            self._history.end_stage(STAGE, status="failed")
+            return StageOutcome.fail(msg, stage_name=STAGE)
+
+        duration = time.time() - start
+        self._record_history(result, duration)
+        self._history.end_stage(STAGE, status="completed")
+        return StageOutcome.ok(result, stage_name=STAGE)
+
+    # ------------------------------------------------------------------
+    # Model loading
+    # ------------------------------------------------------------------
+
+    def _load_models(self, circuit_graph: CircuitGraph) -> None:
+        """Load all three architectures (skip those already loaded)."""
+        input_dim = (
+            circuit_graph.graph_data.x.shape[1]
+            if circuit_graph.graph_data is not None
+            else 17
+        )
+
+        for arch_name in CASCADE_ORDER:
+            if arch_name in self._models:
+                continue
+
+            model_cls = ARCHITECTURE_MAP[arch_name]
+            model = model_cls(input_dim=input_dim)
+
+            weight_file = WEIGHTS_DIR / f"{arch_name}_weights.pt"
+            if weight_file.exists():
+                try:
+                    state_dict = torch.load(
+                        weight_file, map_location=self._device, weights_only=True,
+                    )
+                    model.load_state_dict(state_dict)
+                    self._history.info(STAGE, f"[ensemble] Loaded {arch_name} weights from {weight_file}")
+                except Exception as e:
+                    self._history.warning(
+                        STAGE,
+                        f"[ensemble] Failed to load {arch_name} weights: {e}. "
+                        f"Using random initialization.",
+                    )
+            else:
+                self._history.warning(
+                    STAGE,
+                    f"[ensemble] No weights found for {arch_name} at {weight_file}. "
+                    f"Using random initialization.",
+                )
+
+            model.to(self._device)
+            model.eval()
+            self._models[arch_name] = model
+
+    # ------------------------------------------------------------------
+    # Cascade + weighted-average inference
+    # ------------------------------------------------------------------
+
+    def _run_single_model(
+        self,
+        arch_name: str,
+        data: torch.Tensor,
+        batch: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run a single model forward pass and return (graph_probs, node_probs)."""
+        model = self._models[arch_name]
+        with torch.no_grad():
+            graph_logits, node_logits = model(data.x, data.edge_index, batch)
+            graph_probs = F.softmax(graph_logits, dim=1)
+            node_probs = F.softmax(node_logits, dim=1)
+        return graph_probs, node_probs
+
+    def _classify_ensemble(self, circuit_graph: CircuitGraph) -> ClassificationResult:
+        """Cascade through models, combine with weighted average."""
+        data = circuit_graph.graph_data.to(self._device)
+        num_nodes = data.x.shape[0]
+        batch = torch.zeros(num_nodes, dtype=torch.long, device=self._device)
+
+        # Collect per-model outputs.
+        model_graph_probs: dict[str, torch.Tensor] = {}
+        model_node_probs: dict[str, torch.Tensor] = {}
+        models_run: list[str] = []
+
+        for arch_name in CASCADE_ORDER:
+            graph_probs, node_probs = self._run_single_model(arch_name, data, batch)
+            model_graph_probs[arch_name] = graph_probs
+            model_node_probs[arch_name] = node_probs
+            models_run.append(arch_name)
+
+            # Cascade early-exit: if this model is very confident, stop.
+            trojan_p = graph_probs[0, 1].item()
+            clean_p = graph_probs[0, 0].item()
+            conf = max(trojan_p, clean_p)
+
+            self._history.info(
+                STAGE,
+                f"[ensemble] {arch_name}: p(trojan)={trojan_p:.4f}, "
+                f"confidence={conf:.4f}",
+            )
+
+            if conf >= self._cascade_threshold and len(models_run) < len(CASCADE_ORDER):
+                self._history.info(
+                    STAGE,
+                    f"[ensemble] Cascade early-exit after {arch_name} "
+                    f"(confidence {conf:.4f} >= {self._cascade_threshold})",
+                )
+                break
+
+        # ── Graph-level: weighted average ────────────────────────────
+        per_model_results: dict[str, dict[str, float]] = {}
+        total_weight = 0.0
+        weighted_trojan_prob = 0.0
+
+        for arch_name in models_run:
+            w = self._model_weights.get(arch_name, 1.0 / len(models_run))
+            tp = model_graph_probs[arch_name][0, 1].item()
+            cp = model_graph_probs[arch_name][0, 0].item()
+            per_model_results[arch_name] = {
+                "trojan_probability": round(tp, 6),
+                "confidence": round(max(tp, cp), 6),
+            }
+            weighted_trojan_prob += w * tp
+            total_weight += w
+
+        if total_weight > 0:
+            weighted_trojan_prob /= total_weight
+        ensemble_clean_prob = 1.0 - weighted_trojan_prob
+        ensemble_confidence = max(weighted_trojan_prob, ensemble_clean_prob)
+
+        # Verdict
+        if ensemble_confidence < self._confidence_threshold:
+            verdict = TrojanVerdict.UNCERTAIN
+        elif weighted_trojan_prob > ensemble_clean_prob:
+            verdict = TrojanVerdict.INFECTED
+        else:
+            verdict = TrojanVerdict.CLEAN
+
+        # Model agreement: what fraction of models agree on the majority verdict?
+        majority_infected = weighted_trojan_prob > 0.5
+        agree_count = sum(
+            1
+            for a in models_run
+            if (model_graph_probs[a][0, 1].item() > 0.5) == majority_infected
+        )
+        model_agreement = agree_count / len(models_run) if models_run else 1.0
+
+        # ── Node-level: weighted average of node probs ───────────────
+        combined_node_probs = torch.zeros(num_nodes, 2, device=self._device)
+        total_nw = 0.0
+        for arch_name in models_run:
+            w = self._model_weights.get(arch_name, 1.0 / len(models_run))
+            combined_node_probs += w * model_node_probs[arch_name]
+            total_nw += w
+        if total_nw > 0:
+            combined_node_probs /= total_nw
+
+        gate_scores = self._extract_node_scores(circuit_graph, combined_node_probs)
+        trojan_locations = self._locate_trojans(circuit_graph, gate_scores)
+
+        total_nodes = len(gate_scores)
+        suspicious_count = len(trojan_locations)
+        trojan_percentage = (suspicious_count / total_nodes * 100) if total_nodes > 0 else 0.0
+        high_risk = trojan_percentage >= self._risk_threshold
+        trojan_modules = list({loc.module_name for loc in trojan_locations})
+
+        return ClassificationResult(
+            verdict=verdict,
+            confidence=round(ensemble_confidence, 6),
+            trojan_probability=round(weighted_trojan_prob, 6),
+            gate_suspicion_scores=gate_scores,
+            model_version=self._model_version,
+            architecture="ensemble",
+            trojan_locations=trojan_locations,
+            trojan_node_percentage=round(trojan_percentage, 4),
+            trojan_modules=trojan_modules,
+            high_risk=high_risk,
+            risk_threshold=self._risk_threshold,
+            ensemble_used=True,
+            ensemble_models_run=models_run,
+            per_model_results=per_model_results,
+            model_agreement=round(model_agreement, 4),
+        )
+
+    # ------------------------------------------------------------------
+    # Node-level helpers (reused from TrojanClassifier)
+    # ------------------------------------------------------------------
+
+    def _extract_node_scores(
+        self, circuit_graph: CircuitGraph, node_probs: torch.Tensor,
+    ) -> dict[str, float]:
+        scores = node_probs[:, 1].cpu().tolist()
+        gate_scores: dict[str, float] = {}
+        for idx, score in enumerate(scores):
+            gate_name = circuit_graph.node_to_gate.get(idx, f"node_{idx}")
+            gate_scores[gate_name] = round(score, 6)
+        return gate_scores
+
+    def _locate_trojans(
+        self,
+        circuit_graph: CircuitGraph,
+        gate_scores: dict[str, float],
+    ) -> list[TrojanLocation]:
+        locations: list[TrojanLocation] = []
+        module_lookup = self._build_module_lookup()
+        gate_lookup = self._build_gate_lookup()
+
+        for node_idx, gate_name in circuit_graph.node_to_gate.items():
+            score = gate_scores.get(gate_name, 0.0)
+            if score < self._suspicion_threshold:
+                continue
+
+            gate_info = gate_lookup.get(gate_name, {})
+            module_name = gate_info.get("module_name", "unknown")
+            gate_type = gate_info.get("gate_type", "unknown")
+
+            source_file = None
+            line_number = None
+            module_info = module_lookup.get(module_name)
+            if module_info:
+                source_path = module_info.get("source_path")
+                if source_path:
+                    source_file = source_path
+                    line_number = self._find_gate_line(Path(source_path), gate_name)
+
+            if self._matches_trojan_pattern(gate_name):
+                detection_method = "name_pattern"
+            else:
+                detection_method = "gnn_ensemble"
+
+            locations.append(
+                TrojanLocation(
+                    node_index=node_idx,
+                    gate_name=gate_name,
+                    gate_type=gate_type,
+                    module_name=module_name,
+                    source_file=source_file,
+                    line_number=line_number,
+                    suspicion_score=score,
+                    detection_method=detection_method,
+                )
+            )
+
+        locations.sort(key=lambda x: x.suspicion_score, reverse=True)
+        return locations
+
+    def _build_module_lookup(self) -> dict[str, dict]:
+        if not self._parsed_modules:
+            return {}
+        return {
+            m.name: {"source_path": m.source_path, "gate_count": len(m.gates)}
+            for m in self._parsed_modules
+        }
+
+    def _build_gate_lookup(self) -> dict[str, dict]:
+        if not self._parsed_modules:
+            return {}
+        lookup: dict[str, dict] = {}
+        for module in self._parsed_modules:
+            for gate in module.gates:
+                lookup[gate.instance_name] = {
+                    "module_name": module.name,
+                    "gate_type": gate.canonical_type or gate.gate_type,
+                }
+        return lookup
+
+    def _find_gate_line(self, source_file: Path, gate_name: str) -> int | None:
+        if not source_file.exists():
+            return None
+        try:
+            with open(source_file, "r", encoding="utf-8", errors="replace") as f:
+                for line_num, line in enumerate(f, start=1):
+                    if re.search(rf'\b{re.escape(gate_name)}\s*\(', line):
+                        return line_num
+                    if re.search(rf'\.\w+\s*\(\s*{re.escape(gate_name)}\s*\)', line):
+                        return line_num
+                    if re.search(rf'\b(wire|reg)\b.*\b{re.escape(gate_name)}\b', line):
+                        return line_num
+        except Exception as e:
+            logger.debug(f"Could not search {source_file}: {e}")
+        return None
+
+    @staticmethod
+    def _matches_trojan_pattern(name: str) -> bool:
+        patterns = [
+            r"(?i)trojan", r"(?i)^tj_", r"(?i)_tj$",
+            r"(?i)trigger", r"(?i)payload", r"(?i)^mal_",
+            r"(?i)^ht_", r"(?i)backdoor", r"(?i)leak",
+        ]
+        return any(re.search(p, name) for p in patterns)
+
+    # ------------------------------------------------------------------
+    # History recording
+    # ------------------------------------------------------------------
+
+    def _record_history(self, result: ClassificationResult, duration: float) -> None:
+        self._history.record(STAGE, "verdict", result.verdict.value)
+        self._history.record(STAGE, "confidence", result.confidence)
+        self._history.record(STAGE, "trojan_probability", result.trojan_probability)
+        self._history.record(STAGE, "model_version", result.model_version)
+        self._history.record(STAGE, "architecture", result.architecture)
+        self._history.record(STAGE, "inference_duration", duration)
+        self._history.record(STAGE, "device", str(self._device))
+        self._history.record(STAGE, "trojan_node_percentage", result.trojan_node_percentage)
+        self._history.record(STAGE, "high_risk", result.high_risk)
+        self._history.record(STAGE, "trojan_modules", result.trojan_modules)
+
+        # Ensemble-specific history
+        self._history.record(STAGE, "ensemble_used", True)
+        self._history.record(STAGE, "ensemble_models_run", result.ensemble_models_run)
+        self._history.record(STAGE, "per_model_results", result.per_model_results)
+        self._history.record(STAGE, "model_agreement", result.model_agreement)
+
+        if result.verdict == TrojanVerdict.INFECTED or result.high_risk:
+            top_locations = result.get_top_suspicious(20)
+            self._history.record(
+                STAGE,
+                "top_suspicious_gates",
+                [
+                    {
+                        "gate": loc.gate_name,
+                        "score": loc.suspicion_score,
+                        "module": loc.module_name,
+                        "file": loc.source_file,
+                        "line": loc.line_number,
+                        "type": loc.gate_type,
+                    }
+                    for loc in top_locations
+                ],
+            )
+            by_module = result.get_locations_by_module()
+            self._history.record(
+                STAGE,
+                "trojan_locations_by_module",
+                {
+                    module: [
+                        {
+                            "gate": loc.gate_name,
+                            "line": loc.line_number,
+                            "score": loc.suspicion_score,
+                        }
+                        for loc in locs
+                    ]
+                    for module, locs in by_module.items()
+                },
+            )
+
+        self._history.info(
+            STAGE,
+            f"[ensemble] Final: {result.verdict.value} "
+            f"(confidence={result.confidence:.4f}, "
+            f"p(trojan)={result.trojan_probability:.4f}, "
+            f"trojan_nodes={result.trojan_node_percentage:.2f}%, "
+            f"models={result.ensemble_models_run}, "
+            f"agreement={result.model_agreement:.2f})",
+        )
+
+        if result.high_risk:
+            self._history.warning(
+                STAGE,
+                f"HIGH RISK: {result.trojan_node_percentage:.2f}% of nodes identified as trojan. "
+                f"Affected modules: {', '.join(result.trojan_modules)}",
+            )
