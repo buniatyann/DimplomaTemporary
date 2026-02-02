@@ -99,6 +99,26 @@ class ClassificationResult(BaseModel):
         description="Threshold percentage for high-risk classification"
     )
 
+    # Ensemble fields
+    ensemble_used: bool = Field(
+        default=False,
+        description="Whether ensemble classification was used"
+    )
+    ensemble_models_run: list[str] = Field(
+        default_factory=list,
+        description="List of architecture names that contributed to this result"
+    )
+    per_model_results: dict[str, dict[str, float]] = Field(
+        default_factory=dict,
+        description="Per-model graph-level scores: {arch: {trojan_probability, confidence}}"
+    )
+    model_agreement: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Agreement level across ensemble models (1.0 = unanimous)"
+    )
+
     def get_top_suspicious(self, n: int = 10) -> list[TrojanLocation]:
         """Get top N most suspicious locations sorted by score."""
         return sorted(
