@@ -156,7 +156,26 @@ class TextExporter:
             dur = cr.get("inference_duration")
             if dur is not None:
                 lines.append(f"  Inference time:    {dur:.4f}s")
-       
+
+            # ── Ensemble breakdown ──
+            if cr.get("ensemble_used"):
+                lines.append("")
+                models_run = cr.get("ensemble_models_run", [])
+                agreement = cr.get("model_agreement", 1.0)
+                lines.append(f"  Ensemble models:   {', '.join(models_run)}")
+                lines.append(f"  Model agreement:   {agreement:.0%}")
+
+                per_model = cr.get("per_model_results", {})
+                if per_model:
+                    lines.append("  Per-model scores:")
+                    for arch, scores in per_model.items():
+                        tp = scores.get("trojan_probability", 0.0)
+                        cf = scores.get("confidence", 0.0)
+                        lines.append(
+                            f"    {arch:<6} p(trojan)={tp:.4f}  "
+                            f"confidence={cf:.4f}"
+                        )
+
             lines.append("")
 
             # ── Trojan Locations ──

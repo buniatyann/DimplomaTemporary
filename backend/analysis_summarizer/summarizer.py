@@ -195,7 +195,7 @@ class AnalysisSummarizer:
 
     def _extract_classification_results(self) -> dict[str, Any]:
         """Extract classification data from History including trojan locations."""
-        return {
+        results: dict[str, Any] = {
             "verdict": self._history.get_record("trojan_classifier", "verdict"),
             "confidence": self._history.get_record("trojan_classifier", "confidence"),
             "trojan_probability": self._history.get_record(
@@ -222,6 +222,21 @@ class AnalysisSummarizer:
                 "trojan_classifier", "trojan_locations_by_module", {}
             ),
         }
+
+        # Ensemble-specific fields
+        if self._history.get_record("trojan_classifier", "ensemble_used", False):
+            results["ensemble_used"] = True
+            results["ensemble_models_run"] = self._history.get_record(
+                "trojan_classifier", "ensemble_models_run", []
+            )
+            results["per_model_results"] = self._history.get_record(
+                "trojan_classifier", "per_model_results", {}
+            )
+            results["model_agreement"] = self._history.get_record(
+                "trojan_classifier", "model_agreement", 1.0
+            )
+
+        return results
 
     def _build_sections(self, report: AnalysisReport) -> list[ReportSection]:
         """Build structured report sections."""
