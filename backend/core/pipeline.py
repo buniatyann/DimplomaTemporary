@@ -54,12 +54,11 @@ class DetectionPipeline:
         Returns:
             Dictionary containing the analysis report and export paths.
         """
-        from backend.analysis_summarizer.summarizer import AnalysisSummarizer
         from backend.file_ingestion.collector import FileCollector
         from backend.netlist_graph_builder.builder import NetlistGraphBuilder
         from backend.netlist_synthesizer.synthesizer import NetlistSynthesizer
         from backend.syntax_parser.parser import SyntaxParser
-        from backend.trojan_classifier.classifier import TrojanClassifier
+        from backend.trojan_classifier.ensemble import EnsembleClassifier
 
         if export_formats is None:
             export_formats = ["json"]
@@ -100,10 +99,9 @@ class DetectionPipeline:
         if not graph_outcome.success:
             return self._finalize(history, output_dir, export_formats)
 
-        # Stage 5: Trojan Classification
-        # Pass parsed modules for source location resolution
+        # Stage 5: Trojan Classification (ensemble: GCN → GIN → GAT cascade)
         self._report_progress("trojan_classifier", 5, total_stages)
-        classifier = TrojanClassifier(history)
+        classifier = EnsembleClassifier(history)
         classify_outcome = classifier.process(
             graph_outcome.data,
             parsed_modules=parse_outcome.data,
