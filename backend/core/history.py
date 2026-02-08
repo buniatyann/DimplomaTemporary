@@ -36,8 +36,10 @@ class HistoryEntry:
             "severity": self.severity.value,
             "message": self.message,
         }
+        
         if self.data is not None:
             result["data"] = self.data
+        
         return result
 
 
@@ -57,6 +59,7 @@ class StageRecord:
     def duration(self) -> float | None:
         if self.started_at is not None and self.ended_at is not None:
             return self.ended_at - self.started_at
+        
         return None
 
     def to_dict(self) -> dict[str, Any]:
@@ -118,18 +121,21 @@ class History:
         if stage in self._stages:
             self._stages[stage].ended_at = time.time()
             self._stages[stage].status = status
+        
         self._log(stage, Severity.INFO, f"Stage '{stage}' ended with status: {status}")
 
     def record(self, stage: str, key: str, value: Any) -> None:
         """Store arbitrary key-value data for a stage."""
         if stage not in self._stages:
             self._stages[stage] = StageRecord(name=stage)
+        
         self._stages[stage].data[key] = value
 
     def get_record(self, stage: str, key: str, default: Any = None) -> Any:
         """Retrieve recorded data from a stage."""
         if stage in self._stages:
             return self._stages[stage].data.get(key, default)
+        
         return default
 
     def debug(self, stage: str, message: str, data: dict[str, Any] | None = None) -> None:
@@ -141,16 +147,19 @@ class History:
     def warning(self, stage: str, message: str, data: dict[str, Any] | None = None) -> None:
         if stage in self._stages:
             self._stages[stage].warnings.append(message)
+        
         self._log(stage, Severity.WARNING, message, data)
 
     def error(self, stage: str, message: str, data: dict[str, Any] | None = None) -> None:
         if stage in self._stages:
             self._stages[stage].errors.append(message)
+        
         self._log(stage, Severity.ERROR, message, data)
 
     def critical(self, stage: str, message: str, data: dict[str, Any] | None = None) -> None:
         if stage in self._stages:
             self._stages[stage].errors.append(message)
+        
         self._log(stage, Severity.CRITICAL, message, data)
 
     def _log(
@@ -167,6 +176,7 @@ class History:
             message=message,
             data=data,
         )
+        
         self._entries.append(entry)
 
     def get_warnings(self) -> list[HistoryEntry]:
@@ -186,6 +196,7 @@ class History:
         durations = [
             s.duration for s in self._stages.values() if s.duration is not None
         ]
+        
         return sum(durations) if durations else None
 
     def to_dict(self) -> dict[str, Any]:
