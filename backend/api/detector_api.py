@@ -103,6 +103,7 @@ class DetectorAPI:
         thread = threading.Thread(target=_worker, daemon=True)
         self._current_thread = thread
         thread.start()
+        
         return thread
 
     def cancel(self) -> None:
