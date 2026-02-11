@@ -158,22 +158,27 @@ class VerilogParser:
                 for decl_item in item.children():
                     if isinstance(decl_item, Input):
                         width = self._get_width(decl_item)
-                        ports.append(Port(name=decl_item.name, direction=PortDirection.INPUT, width=width))
-                        wires.append(Wire(name=decl_item.name, width=width, is_input=True))
+                        lineno = getattr(decl_item, "lineno", None)
+                        ports.append(Port(name=decl_item.name, direction=PortDirection.INPUT, width=width, line_number=lineno))
+                        wires.append(Wire(name=decl_item.name, width=width, is_input=True, line_number=lineno))
                     elif isinstance(decl_item, Output):
                         width = self._get_width(decl_item)
-                        ports.append(Port(name=decl_item.name, direction=PortDirection.OUTPUT, width=width))
-                        wires.append(Wire(name=decl_item.name, width=width, is_output=True))
+                        lineno = getattr(decl_item, "lineno", None)
+                        ports.append(Port(name=decl_item.name, direction=PortDirection.OUTPUT, width=width, line_number=lineno))
+                        wires.append(Wire(name=decl_item.name, width=width, is_output=True, line_number=lineno))
                     elif isinstance(decl_item, Inout):
                         width = self._get_width(decl_item)
-                        ports.append(Port(name=decl_item.name, direction=PortDirection.INOUT, width=width))
-                        wires.append(Wire(name=decl_item.name, width=width, is_input=True, is_output=True))
+                        lineno = getattr(decl_item, "lineno", None)
+                        ports.append(Port(name=decl_item.name, direction=PortDirection.INOUT, width=width, line_number=lineno))
+                        wires.append(Wire(name=decl_item.name, width=width, is_input=True, is_output=True, line_number=lineno))
                     elif isinstance(decl_item, VWire):
                         width = self._get_width(decl_item)
-                        wires.append(Wire(name=decl_item.name, width=width))
+                        lineno = getattr(decl_item, "lineno", None)
+                        wires.append(Wire(name=decl_item.name, width=width, line_number=lineno))
                     elif isinstance(decl_item, Reg):
                         width = self._get_width(decl_item)
-                        wires.append(Wire(name=decl_item.name, width=width))
+                        lineno = getattr(decl_item, "lineno", None)
+                        wires.append(Wire(name=decl_item.name, width=width, line_number=lineno))
 
             elif isinstance(item, InstanceList):
                 for inst in item.children():
@@ -189,6 +194,7 @@ class VerilogParser:
                                 canonical_type=canonical,
                                 input_pins=input_pins,
                                 output_pins=output_pins,
+                                line_number=getattr(inst, "lineno", None),
                             )
                         )
                         submodule_refs.append(gate_type)
