@@ -345,15 +345,16 @@ class TrojanClassifier:
 
             # Get source file and line number
             source_file = None
-            line_number = None
+            line_number = gate_info.get("line_number")
 
             module_info = module_lookup.get(module_name)
             if module_info:
                 source_path = module_info.get("source_path")
                 if source_path:
                     source_file = source_path
-                    # Try to find the exact line
-                    line_number = self._find_gate_line(Path(source_path), gate_name)
+                    # Fall back to regex search if parser didn't capture line number
+                    if line_number is None:
+                        line_number = self._find_gate_line(Path(source_path), gate_name)
 
             # Determine detection method
             if self._matches_trojan_pattern(gate_name):
@@ -402,6 +403,7 @@ class TrojanClassifier:
                 lookup[gate.instance_name] = {
                     "module_name": module.name,
                     "gate_type": gate.canonical_type or gate.gate_type,
+                    "line_number": gate.line_number,
                 }
         return lookup
 
