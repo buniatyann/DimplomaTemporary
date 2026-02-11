@@ -13,6 +13,7 @@ The tool processes HDL source files through a 6-stage pipeline — from file ing
 - [Pipeline Architecture](#pipeline-architecture)
 - [GNN Models](#gnn-models)
 - [Training](#training)
+  - [Training Data Sources](#training-data-sources)
 - [GUI](#gui)
 - [Project Structure](#project-structure)
 - [Development](#development)
@@ -197,9 +198,20 @@ python -m backend.training.train --data-dir ./data/trusthub --architecture gin -
 ./training_scripts/train_gcn.sh    # Train GCN only
 ```
 
-### Training datasets
+### Training data sources
 
-The trainer supports TrustHub chip-level benchmarks that include both trojan-infected and clean versions:
+Training and evaluation use publicly available hardware trojan benchmarks and clean circuit collections:
+
+| Dataset | Description | Link | Download |
+|---|---|---|---|
+| **TrustHub** | Chip-level hardware trojan benchmarks (trojan + golden pairs) | [trust-hub.org](https://trust-hub.org/#/benchmarks/chip-level-trojan) | Manual (registration required) |
+| **TRIT** | Synthetic trojan-inserted ASIC benchmarks (LEDA 250nm, Skywater 130nm) | [cadforassurance.org](https://cadforassurance.org/benchmarks/synthetic-trojan-inserted-asic-benchmarks/) | Manual |
+| **ISCAS'85 / ISCAS'89** | Combinational and sequential benchmark circuits (clean) | [github.com/ispras/hdl-benchmarks](https://github.com/ispras/hdl-benchmarks) | Automatic (`git clone`) |
+| **EPFL Benchmarks** | Arithmetic and random-control circuits (clean) | [github.com/lsils/benchmarks](https://github.com/lsils/benchmarks) | Automatic (`git clone`) |
+| **ITC'99** | Industrial test circuits (clean, verification set) | [cerc.utexas.edu/itc99-benchmarks](https://www.cerc.utexas.edu/itc99-benchmarks/) | Manual |
+| **OpenCores** | Real-world open-source IP cores (clean, verification set) | [opencores.org](https://opencores.org) | Manual |
+
+**TrustHub benchmarks** provide the primary trojan-infected training data, each paired with a golden (trojan-free) reference:
 
 - **AES** — AES-T100 through AES-T2000 (cryptographic trojans)
 - **RS232** — RS232-T100 through RS232-T500 (UART trojans)
@@ -207,6 +219,16 @@ The trainer supports TrustHub chip-level benchmarks that include both trojan-inf
 - **wb_conmax** — Wishbone interconnect trojans
 - **BasicRSA** — RSA cryptographic core trojans
 - **ISCAS'89** — s38417, s35932, s15850 benchmark trojans
+
+**ISCAS and EPFL** circuits serve as clean (trojan-free) samples for balanced training. **ITC'99 and OpenCores** are held out for independent verification.
+
+To download the automatically available datasets:
+
+```bash
+./training_scripts/download_datasets.sh
+```
+
+TrustHub and TRIT require manual download after registration. See [backend/training/data/README.md](backend/training/data/README.md) for the expected directory layout.
 
 ### Training hyperparameters
 
