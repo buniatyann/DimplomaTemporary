@@ -21,6 +21,7 @@ class Port(BaseModel):
     name: str
     direction: PortDirection
     width: int = 1
+    line_number: int | None = None
 
 
 class Wire(BaseModel):
@@ -31,6 +32,7 @@ class Wire(BaseModel):
     array_dimensions: list[int] = Field(default_factory=list)
     is_input: bool = False
     is_output: bool = False
+    line_number: int | None = None
 
 
 class Gate(BaseModel):
@@ -41,6 +43,7 @@ class Gate(BaseModel):
     canonical_type: str = ""
     input_pins: list[str] = Field(default_factory=list)
     output_pins: list[str] = Field(default_factory=list)
+    line_number: int | None = None
 
 
 class ParsedModule(BaseModel):
