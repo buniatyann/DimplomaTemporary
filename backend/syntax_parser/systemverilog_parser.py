@@ -110,21 +110,25 @@ class SystemVerilogParser:
             if kind == pyslang.SymbolKind.Port:
                 direction = self._map_direction(member)
                 width = self._get_type_width(member)
-                ports.append(Port(name=member.name, direction=direction, width=width))
+                lineno = self._get_line_number(member)
+                ports.append(Port(name=member.name, direction=direction, width=width, line_number=lineno))
                 wires.append(Wire(
                     name=member.name,
                     width=width,
                     is_input=(direction == PortDirection.INPUT),
                     is_output=(direction == PortDirection.OUTPUT),
+                    line_number=lineno,
                 ))
 
             elif kind == pyslang.SymbolKind.Net:
                 width = self._get_type_width(member)
-                wires.append(Wire(name=member.name, width=width))
+                lineno = self._get_line_number(member)
+                wires.append(Wire(name=member.name, width=width, line_number=lineno))
 
             elif kind == pyslang.SymbolKind.Variable:
                 width = self._get_type_width(member)
-                wires.append(Wire(name=member.name, width=width))
+                lineno = self._get_line_number(member)
+                wires.append(Wire(name=member.name, width=width, line_number=lineno))
 
             elif kind == pyslang.SymbolKind.Instance:
                 inst_body = member.body  # type: ignore[attr-defined]
@@ -140,6 +144,7 @@ class SystemVerilogParser:
                     canonical_type=canonical,
                     input_pins=input_pins,
                     output_pins=output_pins,
+                    line_number=self._get_line_number(member),
                 ))
                 submodule_refs.append(gate_type)
 
@@ -164,6 +169,17 @@ class SystemVerilogParser:
         elif direction == pyslang.ArgumentDirection.InOut:
             return PortDirection.INOUT
         return PortDirection.INPUT
+
+    def _get_line_number(self, member: object) -> int | None:
+        """Extract the source line number from a pyslang symbol."""
+        try:
+            loc = member.location  # type: ignore[attr-defined]
+            # pyslang SourceLocation may expose line directly or need decoding
+            if hasattr(loc, "line"):
+                return int(loc.line)
+        except Exception:
+            pass
+        return None
 
     def _get_type_width(self, member: object) -> int:
         """Extract bit width from a pyslang symbol's type."""
