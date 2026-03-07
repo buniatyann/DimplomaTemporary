@@ -43,6 +43,7 @@ class DetectionPipeline:
         input_path: Path,
         output_dir: Path | None = None,
         export_formats: list[str] | None = None,
+        selected_models: list[str] | None = None,
     ) -> dict[str, Any]:
         """Execute the full detection pipeline on a single file or directory.
 
@@ -50,6 +51,8 @@ class DetectionPipeline:
             input_path: Path to a Verilog file or directory of files.
             output_dir: Directory for report output. Defaults to current directory.
             export_formats: List of export formats (json, pdf, text). Defaults to ["json"].
+            selected_models: List of model architectures to use for classification
+                (e.g. ["gcn"], ["gcn", "gat"], or None for all three).
 
         Returns:
             Dictionary containing the analysis report and export paths.
@@ -101,7 +104,9 @@ class DetectionPipeline:
 
         # Stage 5: Trojan Classification (ensemble: GCN → GIN → GAT cascade)
         self._report_progress("trojan_classifier", 5, total_stages)
-        classifier = EnsembleClassifier(history)
+        classifier = EnsembleClassifier(
+            history, selected_models=selected_models,
+        )
         classify_outcome = classifier.process(
             graph_outcome.data,
             parsed_modules=parse_outcome.data,
