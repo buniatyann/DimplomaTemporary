@@ -66,7 +66,7 @@ class NetlistSynthesizer:
         )
 
         try:
-            json_netlist, stdout, stderr = self._runner.elaborate(source_paths)
+            json_netlist, stdout, stderr = self._runner.synthesize(source_paths)
         except SynthesisError as e:
             self._history.error(STAGE, str(e), data=e.context)
             self._history.end_stage(STAGE, status="failed")
