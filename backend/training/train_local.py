@@ -75,6 +75,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--data-dir", type=Path, default=None, help="Data directory override")
     p.add_argument("--plot-dir", type=Path, default=None, help="Directory to save training plots (default: backend/training/plots)")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--log-every", type=int, default=1, help="Print epoch info every N epochs (default: 1)")
     p.add_argument("-v", "--verbose", action="count", default=0)
     return p.parse_args()
 
@@ -651,27 +652,8 @@ def create_graph_with_trit_labels(
     return data
 
 
-def load_benchmark_files(
-    data_dir: Path | None = None,
-    seed: int = 42,
-) -> tuple[list[Data], list[Data], list[Data]]:
-    """Load benchmarks and split into train / val / test (60/20/20).
-
-    Scans the new dataset structure:
-      - trit/raw/leda250nm/trit_tc/{circuit}/*_T*.v  (trojan, combinational)
-      - trit/raw/leda250nm/trit_ts/{circuit}/*_T*.v  (trojan, sequential)
-      - trit/raw/leda250nm/trit_tc/*.v               (golden references)
-      - trit/raw/leda250nm/trit_ts/*.v               (golden references)
-      - iscas/iscas85/*.v                             (clean)
-      - iscas/iscas89/*.v                             (clean)
-      - epfl/arithmetic/*.v                           (clean)
-      - epfl/random_control/*.v                       (clean)
-    """
-    base = Path(__file__).parent / "data"
-
-    if data_dir is not None:
-        base = data_dir
-
+def _load_graphs_from_source(base: Path) -> list[Data]:
+    """Parse all Verilog source files and build graph objects (slow path)."""
     all_graphs: list[Data] = []
 
     # --- Load TRIT labels for precise node-level trojan identification ---
@@ -738,9 +720,68 @@ def load_benchmark_files(
                 epfl_count += 1
     logger.info(f"EPFL clean: {epfl_count} graphs")
 
+    # --- TrustHub benchmarks (trojan + golden) ---
+    trusthub_dir = base / "trusthub"
+    trusthub_trojan_count = 0
+    trusthub_golden_count = 0
+    if trusthub_dir.exists():
+        for bench_dir in sorted(trusthub_dir.iterdir()):
+            if not bench_dir.is_dir():
+                continue
+            # Trojan files
+            trojan_dir = bench_dir / "trojan"
+            if trojan_dir.exists():
+                for vf in sorted(trojan_dir.glob("*.v")):
+                    g = create_graph_with_trit_labels(vf, is_trojan_file=True)
+                    if g is not None:
+                        all_graphs.append(g)
+                        trusthub_trojan_count += 1
+            # Golden (clean) files
+            golden_dir = bench_dir / "golden"
+            if golden_dir.exists():
+                for vf in sorted(golden_dir.glob("*.v")):
+                    g = create_graph_with_trit_labels(vf, is_trojan_file=False)
+                    if g is not None:
+                        all_graphs.append(g)
+                        trusthub_golden_count += 1
+        logger.info(f"TrustHub trojan: {trusthub_trojan_count} graphs")
+        logger.info(f"TrustHub golden: {trusthub_golden_count} graphs")
+
     n_trojan = sum(1 for g in all_graphs if g.y.item() == 1)
     n_clean = len(all_graphs) - n_trojan
     logger.info(f"Total graphs: {len(all_graphs)} — {n_trojan} trojan, {n_clean} clean")
+
+    return all_graphs
+
+
+def load_benchmark_files(
+    data_dir: Path | None = None,
+    seed: int = 42,
+) -> tuple[list[Data], list[Data], list[Data]]:
+    """Load benchmarks and split into train / val / test (60/20/20).
+
+    Tries to load pre-computed graphs from cache first. Falls back to
+    parsing Verilog source files if the cache is not available.
+
+    Pre-compute the cache with:
+        python -m backend.training.precompute_graphs
+    """
+    base = Path(__file__).parent / "data"
+
+    if data_dir is not None:
+        base = data_dir
+
+    # --- Try loading from pre-computed cache ---
+    cache_file = base / "precomputed_graphs" / "graphs.pt"
+    if cache_file.exists():
+        logger.info(f"Loading pre-computed graphs from {cache_file}")
+        all_graphs = torch.load(cache_file, weights_only=False)
+        n_trojan = sum(1 for g in all_graphs if g.y.item() == 1)
+        n_clean = len(all_graphs) - n_trojan
+        logger.info(f"Loaded {len(all_graphs)} cached graphs ({n_trojan} trojan, {n_clean} clean)")
+    else:
+        logger.info("No pre-computed cache found, parsing Verilog source files...")
+        all_graphs = _load_graphs_from_source(base)
 
     if len(all_graphs) < 4:
         raise FileNotFoundError(
@@ -1234,6 +1275,7 @@ def train_model(
     weight_decay: float,
     patience: int,
     device: torch.device,
+    log_every: int = 1,
 ) -> dict:
     # ---- optimizer: AdamW ----
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -1391,7 +1433,7 @@ def train_model(
 
         elapsed = time.time() - t0
 
-        if epoch % 10 == 0 or epoch == 1 or epoch == epochs:
+        if epoch % log_every == 0 or epoch == 1 or epoch == epochs:
             lr_now = optimizer.param_groups[0]["lr"]
             logger.info(
                 f"Epoch {epoch:3d}/{epochs} ({elapsed:.1f}s) lr={lr_now:.2e} | "
@@ -1419,7 +1461,7 @@ def train_model(
             weights_dir = Path(__file__).parent.parent / "trojan_classifier" / "weights"
             weights_dir.mkdir(parents=True, exist_ok=True)
             torch.save(best_state, weights_dir / f"{model.architecture}_weights.pt")
-            if epoch % 10 == 0 or epoch == 1:
+            if epoch % log_every == 0 or epoch == 1:
                 logger.info(f"  -> Saved best (val_loss={val_loss:.4f}, val_f1={cur_f1:.4f})")
 
         # ---- early stopping ----
@@ -1558,6 +1600,7 @@ def main() -> int:
         weight_decay=args.weight_decay,
         patience=args.patience,
         device=device,
+        log_every=args.log_every,
     )
 
     # ---- final report ----
