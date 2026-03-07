@@ -153,6 +153,7 @@ class FileExplorer(QTreeView):
             added.append(p)
         if added:
             self.files_added.emit(added)
+            self.selection_changed.emit(len(self.checked_paths()) > 0)
         return added
 
     # ------------------------------------------------------------------
@@ -185,6 +186,7 @@ class FileExplorer(QTreeView):
 
         if added:
             self.files_added.emit(added)
+            self.selection_changed.emit(len(self.checked_paths()) > 0)
         return added
 
     # ------------------------------------------------------------------

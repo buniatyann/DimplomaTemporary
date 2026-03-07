@@ -19,14 +19,20 @@ class DetectionWorker(QThread):
     """
 
     file_started = Signal(str)                   # path
-    file_completed = Signal(str, dict)            # path, result dict
+    file_completed = Signal(str, object)           # path, result dict
     file_error = Signal(str, str)                 # path, error message
     progress_updated = Signal(int, int)           # current, total
     all_completed = Signal()
 
-    def __init__(self, file_paths: list[str], parent=None) -> None:  # noqa: ANN001
+    def __init__(
+        self,
+        file_paths: list[str],
+        selected_models: list[str] | None = None,
+        parent=None,  # noqa: ANN001
+    ) -> None:
         super().__init__(parent)
         self._file_paths = list(file_paths)
+        self._selected_models = selected_models
         self._cancelled = False
 
     # ------------------------------------------------------------------
@@ -48,7 +54,7 @@ class DetectionWorker(QThread):
             self.progress_updated.emit(idx, total)
 
             try:
-                result = self._analyse_file(path)
+                result = self._analyse_file(path, self._selected_models)
                 self.file_completed.emit(path, result)
             except Exception as exc:
                 tb = traceback.format_exc()
@@ -61,7 +67,9 @@ class DetectionWorker(QThread):
     # Backend integration
     # ------------------------------------------------------------------
     @staticmethod
-    def _analyse_file(path: str) -> dict[str, Any]:
+    def _analyse_file(
+        path: str, selected_models: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Run the backend pipeline on a single file.
 
         Attempts to use the real DetectorAPI; falls back to a stub
@@ -71,7 +79,9 @@ class DetectionWorker(QThread):
             from backend.api.detector_api import DetectorAPI
 
             api = DetectorAPI()
-            result = api.analyze_file(path, export_formats=["text"])
+            result = api.analyze_file(
+                path, export_formats=["text"], selected_models=selected_models,
+            )
             return _extract_result(result)
         except Exception:
             logger.debug("Backend unavailable, using stub", exc_info=True)
@@ -90,10 +100,13 @@ def _extract_result(raw: dict[str, Any]) -> dict[str, Any]:
     # Build a human-readable report text from the report dict
     report_text = _build_report_text(report)
 
+    verdict = classification.get("verdict") or "N/A"
+    confidence = classification.get("confidence") or 0.0
+
     return {
-        "is_trojan": classification.get("verdict", "CLEAN") != "CLEAN",
-        "confidence": classification.get("confidence", 0.0),
-        "verdict": classification.get("verdict", "N/A"),
+        "is_trojan": verdict not in ("CLEAN", "N/A", None),
+        "confidence": confidence,
+        "verdict": verdict,
         "export_paths": raw.get("export_paths", []),
         "report_text": report_text,
         "raw": raw,

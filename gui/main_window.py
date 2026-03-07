@@ -148,9 +148,15 @@ class MainWindow(QMainWindow):
             self._state_mgr.set_file_status(p, FileStatus.PENDING)
 
         self._state_mgr.set_state(AppState.PROCESSING)
-        self._log_viewer.log_info(f"Starting detection on {len(paths)} file(s)...")
+        selected = self._toolbar.selected_models
+        model_desc = ", ".join(m.upper() for m in selected)
+        self._log_viewer.log_info(
+            f"Starting detection on {len(paths)} file(s) using {model_desc}..."
+        )
 
-        self._worker = DetectionWorker(paths, parent=self)
+        self._worker = DetectionWorker(
+            paths, selected_models=selected, parent=self,
+        )
         self._worker.file_started.connect(self._on_file_started)
         self._worker.file_completed.connect(self._on_file_completed)
         self._worker.file_error.connect(self._on_file_error)
@@ -176,7 +182,16 @@ class MainWindow(QMainWindow):
         confidence = result.get("confidence", 0.0)
         verdict = result.get("verdict", "N/A")
 
-        if is_trojan:
+        # Check if pipeline had errors (earlier stage failed)
+        raw_report = result.get("raw", {}).get("report", {})
+        errors = raw_report.get("errors", [])
+
+        if errors and verdict == "N/A":
+            self._state_mgr.set_file_status(path, FileStatus.ERROR)
+            self._log_viewer.log_alert(
+                f"{Path(path).name}: Pipeline error — {errors[0]}"
+            )
+        elif is_trojan:
             self._state_mgr.set_file_status(path, FileStatus.INFECTED)
             self._log_viewer.log_alert(
                 f"{Path(path).name}: {verdict} (confidence {confidence:.1%})"
@@ -205,6 +220,13 @@ class MainWindow(QMainWindow):
     def _on_file_error(self, path: str, error_msg: str) -> None:
         self._state_mgr.set_file_status(path, FileStatus.ERROR)
         self._log_viewer.log_alert(f"Error on {Path(path).name}: {error_msg}")
+        self._last_results[path] = {
+            "is_trojan": False,
+            "confidence": 0.0,
+            "verdict": "ERROR",
+            "export_paths": [],
+            "report_text": f"Detection failed for {Path(path).name}:\n\n{error_msg}",
+        }
 
     def _on_progress(self, current: int, total: int) -> None:
         self._status_bar.showMessage(f"Processing {current}/{total}...")

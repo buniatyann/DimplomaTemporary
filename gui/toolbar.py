@@ -2,9 +2,85 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal, QPoint
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import QMenu, QToolBar, QToolButton, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QToolBar,
+    QToolButton,
+    QWidget,
+)
+
+
+# Model configurations: (label, list of architectures to run)
+MODEL_CONFIGS: list[tuple[str, list[str]]] = [
+    ("GCN", ["gcn"]),
+    ("GAT", ["gat"]),
+    ("GIN", ["gin"]),
+    ("GCN + GAT", ["gcn", "gat"]),
+    ("GCN + GIN", ["gcn", "gin"]),
+    ("GAT + GIN", ["gat", "gin"]),
+    ("Ensemble (all)", ["gcn", "gat", "gin"]),
+]
+
+# Number of items visible in the popup at once (rest scroll)
+_VISIBLE_ROWS = 3
+
+
+class _ModelPopup(QFrame):
+    """Floating popup with a scrollable list showing 3 items at a time."""
+
+    item_selected = Signal(int)  # index in MODEL_CONFIGS
+
+    def __init__(self, current_index: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.Popup)
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+
+        self._list = QListWidget(self)
+        self._list.setStyleSheet(
+            "QListWidget { font-size: 14px; }"
+            "QListWidget::item { padding: 6px 4px; }"
+        )
+        for label, _ in MODEL_CONFIGS:
+            self._list.addItem(label)
+
+        self._list.setCurrentRow(current_index)
+        self._list.itemClicked.connect(self._on_click)
+
+        # Size: show exactly _VISIBLE_ROWS rows
+        row_h = self._list.sizeHintForRow(0)
+        if row_h <= 0:
+            row_h = 36
+        # +2 for the frame border on top/bottom
+        list_height = row_h * _VISIBLE_ROWS + 2
+        self._list.setFixedHeight(list_height)
+        self._list.setHorizontalScrollBarPolicy(
+            self._list.horizontalScrollBarPolicy().ScrollBarAlwaysOff
+            if hasattr(self._list.horizontalScrollBarPolicy(), "ScrollBarAlwaysOff")
+            else 1  # Qt.ScrollBarAlwaysOff
+        )
+
+        # Make the popup the same width as the list
+        width = max(self._list.sizeHintForColumn(0) + 30, 160)
+        self._list.setFixedWidth(width)
+        self.setFixedSize(width, list_height)
+
+        self._list.move(0, 0)
+
+        # Scroll so the current item is visible
+        self._list.scrollToItem(
+            self._list.item(current_index),
+            QListWidget.ScrollHint.PositionAtCenter,
+        )
+
+    def _on_click(self, item: QListWidgetItem) -> None:
+        row = self._list.row(item)
+        self.item_selected.emit(row)
+        self.close()
 
 
 class Toolbar(QToolBar):
@@ -20,6 +96,7 @@ class Toolbar(QToolBar):
     export_results_clicked = Signal()
     toggle_paths_clicked = Signal()
     export_format_changed = Signal(str)    # "json", "text", or "pdf"
+    model_selection_changed = Signal(list) # list of architecture names
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__("Main Toolbar", parent)
@@ -122,6 +199,40 @@ class Toolbar(QToolBar):
         self._format_button.setMenu(fmt_menu)
         self.addWidget(self._format_button)
 
+        self.addSeparator()
+
+        # ── Model Selector (button that opens a scrollable popup) ──
+        self._selected_model_idx = len(MODEL_CONFIGS) - 1  # default: Ensemble
+        self._model_button = QToolButton(self)
+        self._model_button.setText(f"Model: {MODEL_CONFIGS[self._selected_model_idx][0]}")
+        self._model_button.setToolTip("Select classification model(s)")
+        self._model_button.clicked.connect(self._show_model_popup)
+        self.addWidget(self._model_button)
+
+    # ------------------------------------------------------------------
+    # Model selection
+    # ------------------------------------------------------------------
+    @property
+    def selected_models(self) -> list[str]:
+        """Return the list of architecture names for the current selection."""
+        return list(MODEL_CONFIGS[self._selected_model_idx][1])
+
+    def _show_model_popup(self) -> None:
+        """Open a scrollable list popup below the model button."""
+        popup = _ModelPopup(self._selected_model_idx, parent=self)
+        popup.item_selected.connect(self._set_model)
+
+        # Position below the button
+        btn_pos = self._model_button.mapToGlobal(QPoint(0, self._model_button.height()))
+        popup.move(btn_pos)
+        popup.show()
+
+    def _set_model(self, index: int) -> None:
+        self._selected_model_idx = index
+        label, archs = MODEL_CONFIGS[index]
+        self._model_button.setText(f"Model: {label}")
+        self.model_selection_changed.emit(list(archs))
+
     # ------------------------------------------------------------------
     # Export format
     # ------------------------------------------------------------------
@@ -150,6 +261,7 @@ class Toolbar(QToolBar):
         self._upload_folder.setEnabled(not processing)
         self._export.setEnabled(not processing)
         self._remove.setEnabled(not processing)
+        self._model_button.setEnabled(not processing)
 
     def update_selection_state(self, has_checked: bool) -> None:
         """Enable/disable 'Run Selected' based on whether any files are checked."""
