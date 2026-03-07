@@ -1,0 +1,224 @@
+/* ── Light theme for Hardware Trojan Detector ── */
+
+/* ── Global ── */
+QWidget {
+    background-color: #F5F5F5;
+    color: #1E1E1E;
+    font-family: "Segoe UI", "Ubuntu", "Cantarell", sans-serif;
+    font-size: 13px;
+}
+
+/* ── Main Window ── */
+QMainWindow {
+    background-color: #F5F5F5;
+}
+
+/* ── Toolbar ── */
+QToolBar {
+    background-color: #E8E8E8;
+    border-bottom: 1px solid #C8C8C8;
+    spacing: 6px;
+    padding: 4px 8px;
+}
+
+QToolBar::separator {
+    width: 1px;
+    background-color: #C8C8C8;
+    margin: 4px 6px;
+}
+
+QToolButton {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 6px 12px;
+    color: #1E1E1E;
+}
+
+QToolButton:hover {
+    background-color: #D6EBFF;
+    border-color: #0078D4;
+}
+
+QToolButton:pressed {
+    background-color: #0078D4;
+    color: #FFFFFF;
+}
+
+QToolButton:disabled {
+    color: #A0A0A0;
+}
+
+/* ── Tree View (File Explorer) ── */
+QTreeView {
+    background-color: #FFFFFF;
+    alternate-background-color: #F8F8F8;
+    border: 1px solid #C8C8C8;
+    selection-background-color: #CCE4F7;
+    selection-color: #1E1E1E;
+    outline: none;
+}
+
+QTreeView::item {
+    height: 28px;
+    padding: 2px 4px;
+}
+
+QTreeView::item:hover {
+    background-color: #E8F0FE;
+}
+
+QTreeView::item:selected {
+    background-color: #CCE4F7;
+}
+
+QHeaderView::section {
+    background-color: #E8E8E8;
+    color: #1E1E1E;
+    border: none;
+    border-right: 1px solid #C8C8C8;
+    border-bottom: 1px solid #C8C8C8;
+    padding: 4px 8px;
+    font-weight: bold;
+}
+
+/* ── Plain Text Edit (Log Viewer) ── */
+QPlainTextEdit {
+    background-color: #FFFFFF;
+    color: #1E1E1E;
+    border: 1px solid #C8C8C8;
+    font-family: "Cascadia Code", "Fira Code", "Consolas", "Ubuntu Mono", monospace;
+    font-size: 12px;
+    selection-background-color: #ADD6FF;
+    selection-color: #1E1E1E;
+}
+
+/* ── Splitter ── */
+QSplitter::handle {
+    background-color: #C8C8C8;
+}
+
+QSplitter::handle:horizontal {
+    width: 2px;
+}
+
+QSplitter::handle:hover {
+    background-color: #0078D4;
+}
+
+/* ── Status Bar ── */
+QStatusBar {
+    background-color: #0078D4;
+    color: #FFFFFF;
+    font-size: 12px;
+    padding: 2px 8px;
+}
+
+QStatusBar::item {
+    border: none;
+}
+
+/* ── Scroll Bars ── */
+QScrollBar:vertical {
+    background-color: #F5F5F5;
+    width: 12px;
+    margin: 0;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #C0C0C0;
+    min-height: 30px;
+    border-radius: 3px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #A0A0A0;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+QScrollBar:horizontal {
+    background-color: #F5F5F5;
+    height: 12px;
+    margin: 0;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #C0C0C0;
+    min-width: 30px;
+    border-radius: 3px;
+    margin: 2px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #A0A0A0;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0;
+}
+
+/* ── Context Menu ── */
+QMenu {
+    background-color: #FFFFFF;
+    border: 1px solid #C8C8C8;
+    padding: 4px 0;
+}
+
+QMenu::item {
+    padding: 6px 28px 6px 20px;
+}
+
+QMenu::item:selected {
+    background-color: #CCE4F7;
+}
+
+QMenu::separator {
+    height: 1px;
+    background-color: #C8C8C8;
+    margin: 4px 10px;
+}
+
+/* ── Progress Bar ── */
+QProgressBar {
+    background-color: #E0E0E0;
+    border: none;
+    border-radius: 2px;
+    height: 4px;
+    text-align: center;
+    color: transparent;
+}
+
+QProgressBar::chunk {
+    background-color: #0078D4;
+    border-radius: 2px;
+}
+
+/* ── Tooltips ── */
+QToolTip {
+    background-color: #FFFFFF;
+    color: #1E1E1E;
+    border: 1px solid #C8C8C8;
+    padding: 4px 8px;
+}
+
+/* ── List Widget (Model Selector Popup) ── */
+QListWidget {
+    background-color: #FFFFFF;
+    border: 1px solid #C8C8C8;
+    color: #1E1E1E;
+}
+
+QListWidget::item:hover {
+    background-color: #E8F0FE;
+}
+
+QListWidget::item:selected {
+    background-color: #CCE4F7;
+    color: #1E1E1E;
+}
