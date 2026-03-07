@@ -85,6 +85,7 @@ class EnsembleClassifier:
         suspicion_threshold: float = SUSPICION_THRESHOLD,
         risk_threshold: float = HIGH_RISK_THRESHOLD,
         device: str | None = None,
+        selected_models: list[str] | None = None,
     ) -> None:
         self._history = history
         self._model_weights = model_weights or dict(DEFAULT_WEIGHTS)
@@ -94,6 +95,14 @@ class EnsembleClassifier:
         self._risk_threshold = risk_threshold
         self._model_version = "0.1.0"
         self._parsed_modules: list[ParsedModule] | None = None
+
+        # Filter cascade order to only the selected models
+        if selected_models is not None:
+            self._active_models = [m for m in CASCADE_ORDER if m in selected_models]
+            if not self._active_models:
+                self._active_models = list(CASCADE_ORDER)
+        else:
+            self._active_models = list(CASCADE_ORDER)
 
         if device is None:
             self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -157,14 +166,14 @@ class EnsembleClassifier:
     # ------------------------------------------------------------------
 
     def _load_models(self, circuit_graph: CircuitGraph) -> None:
-        """Load all three architectures (skip those already loaded)."""
+        """Load selected architectures (skip those already loaded)."""
         input_dim = (
             circuit_graph.graph_data.x.shape[1]
             if circuit_graph.graph_data is not None
             else 17
         )
 
-        for arch_name in CASCADE_ORDER:
+        for arch_name in self._active_models:
             if arch_name in self._models:
                 continue
 
@@ -225,13 +234,13 @@ class EnsembleClassifier:
         model_node_probs: dict[str, torch.Tensor] = {}
         models_run: list[str] = []
 
-        for arch_name in CASCADE_ORDER:
+        for arch_name in self._active_models:
             graph_probs, node_probs = self._run_single_model(arch_name, data, batch)
             model_graph_probs[arch_name] = graph_probs
             model_node_probs[arch_name] = node_probs
             models_run.append(arch_name)
 
-            # Cascade early-exit: if this model is very confident, stop.
+            # Cascade early-exit: if this model is very confident, skip remaining.
             trojan_p = graph_probs[0, 1].item()
             clean_p = graph_probs[0, 0].item()
             conf = max(trojan_p, clean_p)
@@ -242,7 +251,7 @@ class EnsembleClassifier:
                 f"confidence={conf:.4f}",
             )
 
-            if conf >= self._cascade_threshold and len(models_run) < len(CASCADE_ORDER):
+            if conf >= self._cascade_threshold and len(models_run) < len(self._active_models):
                 self._history.info(
                     STAGE,
                     f"[ensemble] Cascade early-exit after {arch_name} "
