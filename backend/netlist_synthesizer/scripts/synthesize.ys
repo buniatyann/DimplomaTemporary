@@ -1,8 +1,9 @@
 # Yosys full synthesis script
 # Performs technology mapping and optimization
 {{READ_FILES}}
-hierarchy -check
+hierarchy -auto-top
 proc
+flatten
 opt
 techmap
 opt

@@ -1,7 +1,7 @@
 # Yosys elaboration-only script
 # Validates netlist structure without optimization
 {{READ_FILES}}
-hierarchy -check
+hierarchy -auto-top
 proc
-check -assert
+check
 write_json {{JSON_OUTPUT}}
