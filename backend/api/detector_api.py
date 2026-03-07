@@ -30,6 +30,7 @@ class DetectorAPI:
         file_path: str | Path,
         output_dir: str | Path | None = None,
         export_formats: list[str] | None = None,
+        selected_models: list[str] | None = None,
     ) -> dict[str, Any]:
         """Analyze a single Verilog file.
 
@@ -37,6 +38,8 @@ class DetectorAPI:
             file_path: Path to the Verilog file.
             output_dir: Directory for report output.
             export_formats: List of export formats.
+            selected_models: List of model architectures to use
+                (e.g. ["gcn"], ["gcn", "gat"], or None for all).
 
         Returns:
             Dictionary containing the analysis report and export paths.
@@ -45,6 +48,7 @@ class DetectorAPI:
             input_path=Path(file_path),
             output_dir=Path(output_dir) if output_dir else None,
             export_formats=export_formats,
+            selected_models=selected_models,
         )
 
     def analyze_directory(
