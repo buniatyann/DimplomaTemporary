@@ -23,11 +23,13 @@ from __future__ import annotations
 
 import argparse
 import copy
+import json
 import logging
 import random
 import re
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -1144,6 +1146,94 @@ def compute_metrics(y_true: list, y_pred: list, y_proba: list | None = None, pre
 
 
 # ---------------------------------------------------------------------------
+# Top-10 score leaderboard
+# ---------------------------------------------------------------------------
+
+class TopKScoreTracker:
+    """Track the best K scores for F1 and AUC-ROC at both graph and node level.
+
+    Persists to a JSON file so results survive across training runs.
+    """
+
+    def __init__(self, save_path: Path, k: int = 10) -> None:
+        self._path = save_path
+        self._k = k
+        self._board: dict[str, list[dict]] = self._load()
+
+    def _load(self) -> dict[str, list[dict]]:
+        if self._path.exists():
+            try:
+                with open(self._path) as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, KeyError):
+                pass
+        return {
+            "graph_f1": [],
+            "graph_auc_roc": [],
+            "node_f1": [],
+            "node_auc_roc": [],
+        }
+
+    def save(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self._path, "w") as f:
+            json.dump(self._board, f, indent=2)
+
+    def update(
+        self,
+        epoch: int,
+        architecture: str,
+        val_metrics: dict,
+        val_node_metrics: dict | None = None,
+    ) -> None:
+        """Record an epoch's scores if they make the top K."""
+        timestamp = datetime.now().isoformat()
+
+        entries = [
+            ("graph_f1", val_metrics.get("val_f1", 0.0)),
+            ("graph_auc_roc", val_metrics.get("val_roc_auc", 0.0)),
+        ]
+        if val_node_metrics:
+            entries.append(("node_f1", val_node_metrics.get("val_node_f1", 0.0)))
+            entries.append(("node_auc_roc", val_node_metrics.get("val_node_roc_auc", 0.0)))
+
+        for key, score in entries:
+            if score <= 0:
+                continue
+            record = {
+                "score": round(score, 6),
+                "epoch": epoch,
+                "architecture": architecture,
+                "timestamp": timestamp,
+            }
+            board = self._board.setdefault(key, [])
+            board.append(record)
+            board.sort(key=lambda r: r["score"], reverse=True)
+            self._board[key] = board[: self._k]
+
+        self.save()
+
+    def summary(self) -> str:
+        """Return a formatted string of the leaderboard."""
+        lines = ["", "=" * 60, "  TOP-10 SCORE LEADERBOARD", "=" * 60]
+        for key in ("graph_f1", "graph_auc_roc", "node_f1", "node_auc_roc"):
+            board = self._board.get(key, [])
+            if not board:
+                continue
+            label = key.replace("_", " ").upper()
+            lines.append(f"\n  {label}:")
+            lines.append(f"  {'Rank':<6}{'Score':<10}{'Arch':<12}{'Epoch':<8}{'Timestamp'}")
+            lines.append(f"  {'-'*56}")
+            for i, rec in enumerate(board, 1):
+                lines.append(
+                    f"  {i:<6}{rec['score']:<10.6f}{rec['architecture']:<12}"
+                    f"{rec['epoch']:<8}{rec.get('timestamp', 'N/A')}"
+                )
+        lines.append("=" * 60)
+        return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
 
@@ -1683,6 +1773,15 @@ def main() -> int:
             logger.info(line)
     else:
         logger.info("  All test graphs classified correctly!")
+
+    # ---- top-K score tracker ----
+    tracker_path = Path(__file__).parent / "top_scores.json"
+    tracker = TopKScoreTracker(tracker_path)
+    for rec in result["history"]:
+        val_m_rec = {k: v for k, v in rec.items() if k.startswith("val_") and "node" not in k}
+        vn_m_rec = {k: v for k, v in rec.items() if k.startswith("val_node_")}
+        tracker.update(rec["epoch"], args.architecture, val_m_rec, vn_m_rec or None)
+    logger.info(tracker.summary())
 
     # ---- matplotlib plots ----
     plot_dir = args.plot_dir or (Path(__file__).parent / "plots")
