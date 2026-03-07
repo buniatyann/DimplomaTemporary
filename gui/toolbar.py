@@ -97,6 +97,7 @@ class Toolbar(QToolBar):
     toggle_paths_clicked = Signal()
     export_format_changed = Signal(str)    # "json", "text", or "pdf"
     model_selection_changed = Signal(list) # list of architecture names
+    theme_toggled = Signal(str)            # "dark" or "light"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__("Main Toolbar", parent)
@@ -209,6 +210,16 @@ class Toolbar(QToolBar):
         self._model_button.clicked.connect(self._show_model_popup)
         self.addWidget(self._model_button)
 
+        self.addSeparator()
+
+        # ── Theme Toggle ──
+        self._current_theme = "dark"
+        self._theme_button = QToolButton(self)
+        self._theme_button.setText("Light Mode")
+        self._theme_button.setToolTip("Switch between dark and light theme")
+        self._theme_button.clicked.connect(self._toggle_theme)
+        self.addWidget(self._theme_button)
+
     # ------------------------------------------------------------------
     # Model selection
     # ------------------------------------------------------------------
@@ -232,6 +243,22 @@ class Toolbar(QToolBar):
         label, archs = MODEL_CONFIGS[index]
         self._model_button.setText(f"Model: {label}")
         self.model_selection_changed.emit(list(archs))
+
+    # ------------------------------------------------------------------
+    # Theme toggle
+    # ------------------------------------------------------------------
+    def _toggle_theme(self) -> None:
+        if self._current_theme == "dark":
+            self._current_theme = "light"
+            self._theme_button.setText("Dark Mode")
+        else:
+            self._current_theme = "dark"
+            self._theme_button.setText("Light Mode")
+        self.theme_toggled.emit(self._current_theme)
+
+    @property
+    def current_theme(self) -> str:
+        return self._current_theme
 
     # ------------------------------------------------------------------
     # Export format

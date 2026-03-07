@@ -104,7 +104,7 @@ def _extract_result(raw: dict[str, Any]) -> dict[str, Any]:
     confidence = classification.get("confidence") or 0.0
 
     return {
-        "is_trojan": verdict not in ("CLEAN", "N/A", None),
+        "is_trojan": verdict.lower() not in ("clean", "n/a"),
         "confidence": confidence,
         "verdict": verdict,
         "export_paths": raw.get("export_paths", []),

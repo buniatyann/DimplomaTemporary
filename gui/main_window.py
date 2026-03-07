@@ -72,12 +72,14 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Stylesheet
     # ------------------------------------------------------------------
-    def _apply_stylesheet(self) -> None:
-        qss_path = Path(__file__).parent / "styles" / "dark_theme.qss"
+    def _apply_stylesheet(self, theme: str = "dark") -> None:
+        qss_path = Path(__file__).parent / "styles" / f"{theme}_theme.qss"
         if qss_path.exists():
             self.setStyleSheet(qss_path.read_text(encoding="utf-8"))
         else:
-            logger.warning("Dark theme stylesheet not found at %s", qss_path)
+            logger.warning("Theme stylesheet not found at %s", qss_path)
+        if hasattr(self, "_log_viewer"):
+            self._log_viewer.set_theme(theme)
 
     # ------------------------------------------------------------------
     # Signal wiring
@@ -95,6 +97,7 @@ class MainWindow(QMainWindow):
         tb.clear_log_clicked.connect(self._log_viewer.clear)
         tb.export_results_clicked.connect(self._export_results)
         tb.toggle_paths_clicked.connect(self._file_explorer.toggle_absolute_paths)
+        tb.theme_toggled.connect(self._apply_stylesheet)
 
         # File explorer → log feedback
         self._file_explorer.files_added.connect(self._on_files_added)
