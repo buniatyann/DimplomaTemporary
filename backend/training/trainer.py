@@ -276,8 +276,10 @@ class TrojanTrainer:
             # Validate
             val_metrics = self._validate(val_loader, node_class_weights)
 
-            # Update scheduler
-            self.scheduler.step(val_metrics["loss"])
+            # Update scheduler (skip if val loss is NaN)
+            val_loss = val_metrics["loss"]
+            if not (val_loss != val_loss):  # NaN check
+                self.scheduler.step(val_loss)
 
             # Record metrics
             metrics = TrainingMetrics(
@@ -305,9 +307,9 @@ class TrojanTrainer:
                 f"Node F1: {val_metrics['node_f1']:.4f}"
             )
 
-            # Checkpointing
-            if val_metrics["loss"] < self.best_val_loss:
-                self.best_val_loss = val_metrics["loss"]
+            # Checkpointing (skip NaN losses)
+            if not (val_loss != val_loss) and val_loss < self.best_val_loss:
+                self.best_val_loss = val_loss
                 self.patience_counter = 0
                 if self.config.save_best:
                     self._save_checkpoint(epoch)
@@ -456,6 +458,7 @@ class TrojanTrainer:
 
     def _compute_class_weights(self, dataset: list[Data]) -> torch.Tensor:
         """Compute class weights to handle imbalanced trojan nodes."""
+        import math
         total_nodes = 0
         trojan_nodes = 0
 
@@ -467,14 +470,11 @@ class TrojanTrainer:
         if trojan_nodes == 0 or total_nodes == 0:
             return torch.tensor([1.0, 1.0])
 
-        # Inverse frequency weighting
+        # sqrt-dampened inverse frequency weighting
         benign_nodes = total_nodes - trojan_nodes
-        weight_benign = total_nodes / (2 * benign_nodes)
-        weight_trojan = total_nodes / (2 * trojan_nodes)
-
-        # Normalize
-        max_weight = max(weight_benign, weight_trojan)
-        weights = torch.tensor([weight_benign / max_weight, weight_trojan / max_weight])
+        raw_ratio = benign_nodes / trojan_nodes
+        dampened_ratio = min(math.sqrt(raw_ratio), 50.0)
+        weights = torch.tensor([1.0, dampened_ratio])
 
         return weights
 
