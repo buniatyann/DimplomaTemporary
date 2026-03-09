@@ -166,8 +166,7 @@ class DetectionPipeline:
             return [{"error": manifest_outcome.error_message}]
 
         results = []
-        manifest = manifest_outcome.data
-        for file_entry in manifest.files:
+        manifest = manifest_outcome.data        for file_entry in manifest.files:
             result = self.run(file_entry.path, output_dir, export_formats)
             results.append(result)
 
