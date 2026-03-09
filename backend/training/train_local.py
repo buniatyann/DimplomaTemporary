@@ -1003,7 +1003,7 @@ def oversample_minority(graphs: list[Data]) -> list[Data]:
 # ---------------------------------------------------------------------------
 
 class TrojanGNN(torch.nn.Module):
-    """Multi-layer GNN with BatchNorm, residual connections, and separate heads."""
+    """Multi-layer GNN with LayerNorm, residual connections, and separate heads."""
 
     def __init__(
         self,
@@ -1018,23 +1018,21 @@ class TrojanGNN(torch.nn.Module):
         self.dropout = dropout
         self.num_layers = num_layers
 
-        from torch_geometric.nn import BatchNorm
-
         # Input projection
         self.input_proj = torch.nn.Linear(input_dim, hidden_dim)
 
-        # GNN conv layers
+        # GNN conv layers + LayerNorm (batch-size agnostic, no NaN in eval mode)
         self.convs = torch.nn.ModuleList()
         self.bns = torch.nn.ModuleList()
 
         for _ in range(num_layers):
             self.convs.append(self._make_conv(hidden_dim, hidden_dim, architecture))
-            self.bns.append(BatchNorm(hidden_dim))
+            self.bns.append(torch.nn.LayerNorm(hidden_dim))
 
         # Graph-level head
         self.graph_head = torch.nn.Sequential(
             torch.nn.Linear(hidden_dim * 2, hidden_dim),  # *2 for concat(mean, max)
-            torch.nn.BatchNorm1d(hidden_dim),
+            torch.nn.LayerNorm(hidden_dim),
             torch.nn.ReLU(),
             torch.nn.Dropout(dropout),
             torch.nn.Linear(hidden_dim, hidden_dim // 2),
@@ -1046,7 +1044,7 @@ class TrojanGNN(torch.nn.Module):
         # Node-level head (deeper for better localization)
         self.node_head = torch.nn.Sequential(
             torch.nn.Linear(hidden_dim, hidden_dim),
-            torch.nn.BatchNorm1d(hidden_dim),
+            torch.nn.LayerNorm(hidden_dim),
             torch.nn.ReLU(),
             torch.nn.Dropout(dropout),
             torch.nn.Linear(hidden_dim, hidden_dim // 2),
@@ -1067,7 +1065,7 @@ class TrojanGNN(torch.nn.Module):
             from torch_geometric.nn import GINConv
             nn = torch.nn.Sequential(
                 torch.nn.Linear(in_dim, out_dim),
-                torch.nn.BatchNorm1d(out_dim),
+                torch.nn.LayerNorm(out_dim),
                 torch.nn.ReLU(),
                 torch.nn.Linear(out_dim, out_dim),
             )
@@ -1391,13 +1389,15 @@ def train_model(
     n_clean_nodes = (all_node_labels == 0).sum()
     n_trojan_nodes = (all_node_labels == 1).sum()
     if n_trojan_nodes > 0:
-        # Cap the weight to avoid extreme gradients; sqrt dampening
         raw_ratio = float(n_clean_nodes) / float(n_trojan_nodes)
-        capped_ratio = min(raw_ratio, 100.0)  # cap at 100x
+        # Use sqrt dampening to avoid gradient explosion while still upweighting heavily
+        dampened_ratio = float(np.sqrt(raw_ratio))
+        capped_ratio = min(dampened_ratio, 50.0)  # cap at 50x after sqrt
         node_weight = torch.tensor([1.0, capped_ratio], device=device)
     else:
         node_weight = torch.tensor([1.0, 1.0], device=device)
-    logger.info(f"Node class weights: clean=1.0, trojan={node_weight[1]:.2f} (raw ratio={raw_ratio:.0f})")
+        raw_ratio = 1.0
+    logger.info(f"Node class weights: clean=1.0, trojan={node_weight[1]:.2f} (raw ratio={raw_ratio:.0f}, sqrt dampened)")
 
     # ---- graph-level class weights ----
     graph_labels = []
