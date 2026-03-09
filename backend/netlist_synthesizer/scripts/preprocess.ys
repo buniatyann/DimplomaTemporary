@@ -1,0 +1,8 @@
+# Yosys preprocessing script for training data
+# Preserves gate instance names; flattens multi-module designs
+{{READ_FILES}}
+hierarchy -auto-top
+proc
+flatten
+opt_clean
+write_json {{JSON_OUTPUT}}
