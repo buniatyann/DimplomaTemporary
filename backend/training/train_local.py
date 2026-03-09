@@ -749,6 +749,23 @@ def _load_graphs_from_source(base: Path) -> list[Data]:
         logger.info(f"TrustHub trojan: {trusthub_trojan_count} graphs")
         logger.info(f"TrustHub golden: {trusthub_golden_count} graphs")
 
+    # --- HDL benchmarks (all clean) ---
+    hdl_dir = base / "hdl_benchmarks"
+    hdl_count = 0
+    if hdl_dir.exists():
+        for suite_link in sorted(hdl_dir.iterdir()):
+            suite_name = suite_link.name
+            suite_count = 0
+            for vf in sorted(suite_link.rglob("*.v")):
+                g = create_graph_with_trit_labels(vf, is_trojan_file=False)
+                if g is not None:
+                    all_graphs.append(g)
+                    suite_count += 1
+            if suite_count > 0:
+                logger.info(f"HDL {suite_name}: {suite_count} clean graphs")
+            hdl_count += suite_count
+        logger.info(f"HDL benchmarks total: {hdl_count} clean graphs")
+
     n_trojan = sum(1 for g in all_graphs if g.y.item() == 1)
     n_clean = len(all_graphs) - n_trojan
     logger.info(f"Total graphs: {len(all_graphs)} — {n_trojan} trojan, {n_clean} clean")
