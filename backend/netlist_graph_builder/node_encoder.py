@@ -1,9 +1,9 @@
 """NodeEncoder for transforming gate types into numerical feature vectors.
 
-Feature vector layout (26 dimensions total):
+Feature vector layout (31 dimensions total):
     [ 0..14] one-hot gate type (matching training vocabulary)
     [15..18] basic features: fan_in, fan_out, depth, is_seq
-    [19..25] structural features (computed separately by builder)
+    [19..30] structural features (computed separately by builder)
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ DEFAULT_VOCABULARY: dict[str, int] = {
     "UNKNOWN": 14,
 }
 
-# Total feature dimension: 15 one-hot + 4 basic + 7 structural
-FEATURE_DIM = 26
+# Total feature dimension: 15 one-hot + 4 basic + 12 structural
+FEATURE_DIM = 31
 VOCAB_SIZE = 15
 
 
@@ -54,7 +54,7 @@ class NodeEncoder:
 
     @property
     def feature_dim(self) -> int:
-        """Total feature dimensionality: 15 one-hot + 4 basic + 7 structural = 26."""
+        """Total feature dimensionality: 15 one-hot + 4 basic + 12 structural = 31."""
         return FEATURE_DIM
 
     @property
@@ -99,7 +99,7 @@ class NodeEncoder:
         vec[VOCAB_SIZE + 2] = (fan_in + 1) / (fan_out + fan_in + 2)  # depth proxy
         vec[VOCAB_SIZE + 3] = 1.0 if canonical_type == "DFF" else 0.0  # is_seq
 
-        # Structural features [19..25] left as 0 — filled by builder
+        # Structural features [19..30] left as 0 — filled by builder
         return vec
 
     def encode_batch(
