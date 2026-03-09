@@ -56,11 +56,15 @@ def _normalize_yosys_type(raw_type: str) -> str:
         return _YOSYS_TYPE_MAP[upper]
     # Strip $ and _ prefixes/suffixes for matching
     stripped = raw_type.lstrip("$").strip("_").upper()
-    # Common prefixes: DFF_X1, AND2_X1, NAND3, etc.
-    for prefix in ("DFF", "AND", "NAND", "OR", "NOR", "XOR", "XNOR",
-                    "NOT", "BUF", "INV", "MUX", "LATCH"):
+    # Common prefixes: DFF_X1, AND2_X1, NAND3, LEDA 250nm cells (nnd2s1, hi1s1), etc.
+    for prefix in ("DFF", "AND", "NAND", "NND", "OR", "NOR", "XOR", "XNOR",
+                    "NOT", "BUF", "INV", "HI1", "MUX", "LATCH"):
         if stripped.startswith(prefix):
-            return "NOT" if prefix == "INV" else prefix
+            if prefix in ("INV", "HI1"):
+                return "NOT"
+            if prefix == "NND":
+                return "NAND"
+            return prefix
 
     return stripped if stripped else "UNKNOWN"
 
@@ -253,6 +257,9 @@ class NetlistGraphBuilder:
                 "degree_centrality", "is_io_adjacent", "neighbor_type_entropy",
                 "rare_type_ratio", "local_fanout_anomaly",
                 "min_dist_to_input", "min_dist_to_output",
+                "twohop_neighborhood_size", "local_clustering_coeff",
+                "avg_neighbor_degree", "fanin_fanout_imbalance",
+                "combinational_depth",
             ],
         )
 
@@ -290,7 +297,7 @@ def _compute_structural_features(
     edges: list[tuple[int, int]],
     node_types: list[str],
 ) -> torch.Tensor:
-    """Compute 7 structural features per node.
+    """Compute 12 structural features per node.
 
     Features:
         0: degree_centrality
@@ -300,9 +307,14 @@ def _compute_structural_features(
         4: local_fanout_anomaly
         5: min_dist_to_input
         6: min_dist_to_output
+        7: twohop_neighborhood_size
+        8: local_clustering_coeff
+        9: avg_neighbor_degree
+       10: fanin_fanout_imbalance
+       11: combinational_depth (longest path from input, normalized)
     """
     n = len(nodes)
-    feats = torch.zeros((n, 7), dtype=torch.float)
+    feats = torch.zeros((n, 12), dtype=torch.float)
     if n == 0:
         return feats
 
@@ -312,6 +324,12 @@ def _compute_structural_features(
     for s, t in edges:
         adj_out[s].append(t)
         adj_in[t].append(s)
+
+    # Build undirected neighbor sets for clustering coefficient
+    adj_undirected: list[set[int]] = [set() for _ in range(n)]
+    for s, t in edges:
+        adj_undirected[s].add(t)
+        adj_undirected[t].add(s)
 
     fi = [len(adj_in[i]) for i in range(n)]
     fo = [len(adj_out[i]) for i in range(n)]
@@ -343,7 +361,7 @@ def _compute_structural_features(
         var = sum((x - mean) ** 2 for x in fos) / max(len(fos), 1)
         type_std_fo[nt] = max(var ** 0.5, 1.0)
 
-    # Multi-source BFS from all inputs
+    # Multi-source BFS from all inputs (shortest path)
     dist_from_input = [float("inf")] * n
     if input_nodes:
         q: deque[int] = deque()
@@ -373,14 +391,39 @@ def _compute_structural_features(
                     dist_from_output[v] = dist_from_output[u] + 1
                     q.append(v)
 
+    # Combinational depth: longest path from any input (topological relaxation)
+    comb_depth = [0] * n
+    if input_nodes:
+        # Use topological order via Kahn's algorithm
+        in_degree = [len(adj_in[i]) for i in range(n)]
+        topo_q: deque[int] = deque()
+        for i in range(n):
+            if in_degree[i] == 0:
+                topo_q.append(i)
+        # For inputs, depth = 0
+        for s in input_nodes:
+            comb_depth[s] = 0
+
+        while topo_q:
+            u = topo_q.popleft()
+            for v in adj_out[u]:
+                comb_depth[v] = max(comb_depth[v], comb_depth[u] + 1)
+                in_degree[v] -= 1
+                if in_degree[v] == 0:
+                    topo_q.append(v)
+
+    max_comb_depth = max(comb_depth) if comb_depth else 1
+    max_comb_depth = max(max_comb_depth, 1)
+
     max_dist = 50.0
 
     for i in range(n):
+        neighbors = set(adj_out[i]) | set(adj_in[i])
+
         # 0: degree centrality
         feats[i, 0] = degrees[i] / max(max_deg, 1)
 
         # 1: is_io_adjacent
-        neighbors = set(adj_out[i]) | set(adj_in[i])
         feats[i, 1] = 1.0 if neighbors & io_set else 0.0
 
         # 2: neighbor type entropy
@@ -418,5 +461,36 @@ def _compute_structural_features(
         # 6: min distance to output (normalized)
         d_out = dist_from_output[i]
         feats[i, 6] = min(d_out, max_dist) / max_dist if d_out != float("inf") else 1.0
+
+        # 7: 2-hop neighborhood size (normalized by total nodes)
+        twohop = set(neighbors)
+        for nb in neighbors:
+            twohop.update(adj_out[nb])
+            twohop.update(adj_in[nb])
+        twohop.discard(i)
+        feats[i, 7] = len(twohop) / max(n - 1, 1)
+
+        # 8: local clustering coefficient (undirected, capped for perf)
+        und_neighbors = adj_undirected[i]
+        k = len(und_neighbors)
+        if k >= 2 and k <= 200:  # skip very high-degree nodes (O(k^2))
+            triangles = 0
+            nb_list = list(und_neighbors)
+            for a_idx in range(len(nb_list)):
+                for b_idx in range(a_idx + 1, len(nb_list)):
+                    if nb_list[b_idx] in adj_undirected[nb_list[a_idx]]:
+                        triangles += 1
+            feats[i, 8] = (2.0 * triangles) / (k * (k - 1))
+
+        # 9: average neighbor degree (normalized)
+        if neighbors:
+            avg_nd = sum(degrees[nb] for nb in neighbors) / len(neighbors)
+            feats[i, 9] = avg_nd / max(max_deg, 1)
+
+        # 10: fan-in/fan-out imbalance
+        feats[i, 10] = abs(fi[i] - fo[i]) / (fi[i] + fo[i] + 1)
+
+        # 11: combinational depth (longest path from input, normalized)
+        feats[i, 11] = comb_depth[i] / max_comb_depth
 
     return feats
