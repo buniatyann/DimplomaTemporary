@@ -215,3 +215,8 @@ reports/
 
 # Scripts specifically for my desktop
 my_scripts/
+
+# Training artifacts
+backend/training/top_scores.json
+backend/training/plots/
+backend/training/data/precomputed_graphs/
