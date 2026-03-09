@@ -37,6 +37,27 @@ class NetlistSynthesizer:
         Returns:
             StageOutcome wrapping a SynthesisResult.
         """
+        # Collect unique source paths from parsed modules
+        source_paths: list[Path] = []
+        seen: set[str] = set()
+        for m in parsed_modules:
+            if m.source_path and m.source_path not in seen:
+                source_paths.append(Path(m.source_path))
+                seen.add(m.source_path)
+
+        return self.process_paths(source_paths)
+
+    def process_paths(
+        self, source_paths: list[Path]
+    ) -> StageOutcome[SynthesisResult]:
+        """Validate and synthesize netlists via Yosys from file paths directly.
+
+        Args:
+            source_paths: List of Verilog file paths to synthesize.
+
+        Returns:
+            StageOutcome wrapping a SynthesisResult.
+        """
         self._history.begin_stage(STAGE)
         start = time.time()
 
@@ -45,14 +66,6 @@ class NetlistSynthesizer:
             self._history.error(STAGE, msg)
             self._history.end_stage(STAGE, status="failed")
             return StageOutcome.fail(msg, stage_name=STAGE)
-
-        # Collect unique source paths
-        source_paths: list[Path] = []
-        seen: set[str] = set()
-        for m in parsed_modules:
-            if m.source_path and m.source_path not in seen:
-                source_paths.append(Path(m.source_path))
-                seen.add(m.source_path)
 
         if not source_paths:
             msg = "No source files to synthesize"
