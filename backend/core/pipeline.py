@@ -85,13 +85,17 @@ class DetectionPipeline:
         self._report_progress("syntax_parser", 2, total_stages)
         parser = SyntaxParser(history)
         parse_outcome = parser.process(ingestion_outcome.data)
-        if not parse_outcome.success:
-            return self._finalize(history, output_dir, export_formats)
 
         # Stage 3: Netlist Synthesis
         self._report_progress("netlist_synthesizer", 3, total_stages)
         synthesizer = NetlistSynthesizer(history)
-        synth_outcome = synthesizer.process(parse_outcome.data)
+        if parse_outcome.success:
+            synth_outcome = synthesizer.process(parse_outcome.data)
+        else:
+            # Fallback: bypass pyverilog and run Yosys directly on source files
+            history.info("netlist_synthesizer", "Parser failed — falling back to direct Yosys synthesis")
+            source_paths = [f.path for f in ingestion_outcome.data.files]
+            synth_outcome = synthesizer.process_paths(source_paths)
         if not synth_outcome.success:
             return self._finalize(history, output_dir, export_formats)
 
@@ -109,7 +113,7 @@ class DetectionPipeline:
         )
         classify_outcome = classifier.process(
             graph_outcome.data,
-            parsed_modules=parse_outcome.data,
+            parsed_modules=parse_outcome.data if parse_outcome.success else None,
         )
         if not classify_outcome.success:
             return self._finalize(history, output_dir, export_formats)
@@ -166,7 +170,8 @@ class DetectionPipeline:
             return [{"error": manifest_outcome.error_message}]
 
         results = []
-        manifest = manifest_outcome.data        for file_entry in manifest.files:
+        manifest = manifest_outcome.data
+        for file_entry in manifest.files:
             result = self.run(file_entry.path, output_dir, export_formats)
             results.append(result)
 
