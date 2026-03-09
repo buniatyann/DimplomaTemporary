@@ -175,6 +175,17 @@ def _discover_files(
                         benchmark_name=f"{bench_dir.name}/{vf.stem}",
                     ))
 
+    # --- HDL benchmarks (all clean) ---
+    hdl_dir = base / "hdl_benchmarks"
+    if hdl_dir.exists():
+        for suite_link in sorted(hdl_dir.iterdir()):
+            suite_name = suite_link.name
+            for vf in sorted(suite_link.rglob("*.v")):
+                entries.append(FileEntry(
+                    path=vf, is_trojan=False, source=f"hdl_{suite_name}",
+                    benchmark_name=f"{suite_name}/{vf.stem}",
+                ))
+
     return entries
 
 
