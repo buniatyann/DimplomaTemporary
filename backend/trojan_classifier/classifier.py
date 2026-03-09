@@ -259,22 +259,33 @@ class TrojanClassifier:
         else:
             verdict = TrojanVerdict.CLEAN
 
-        # Use node-level predictions for per-node suspicion scores
-        gate_scores = self._extract_node_scores(circuit_graph, node_probs)
+        # Stage 2 (node localization) only runs on flagged circuits.
+        # Skipping it for CLEAN circuits eliminates false positive nodes
+        # from clean circuits contributing to node-level precision loss.
+        if verdict == TrojanVerdict.CLEAN:
+            logger.debug("Graph classified as CLEAN — skipping node-level localization.")
+            gate_scores: dict[str, float] = {}
+            trojan_locations = []
+            trojan_percentage = 0.0
+            high_risk = False
+            trojan_modules: list[str] = []
+        else:
+            # Use node-level predictions for per-node suspicion scores
+            gate_scores = self._extract_node_scores(circuit_graph, node_probs)
 
-        # Identify trojan locations for nodes above threshold
-        trojan_locations = self._locate_trojans(circuit_graph, gate_scores)
+            # Identify trojan locations for nodes above threshold
+            trojan_locations = self._locate_trojans(circuit_graph, gate_scores)
 
-        # Calculate trojan node percentage
-        total_nodes = len(gate_scores)
-        suspicious_count = len(trojan_locations)
-        trojan_percentage = (suspicious_count / total_nodes * 100) if total_nodes > 0 else 0.0
+            # Calculate trojan node percentage
+            total_nodes = len(gate_scores)
+            suspicious_count = len(trojan_locations)
+            trojan_percentage = (suspicious_count / total_nodes * 100) if total_nodes > 0 else 0.0
 
-        # Determine if high risk
-        high_risk = trojan_percentage >= self._risk_threshold
+            # Determine if high risk
+            high_risk = trojan_percentage >= self._risk_threshold
 
-        # Collect affected modules
-        trojan_modules = list(set(loc.module_name for loc in trojan_locations))
+            # Collect affected modules
+            trojan_modules = list(set(loc.module_name for loc in trojan_locations))
 
         return ClassificationResult(
             verdict=verdict,
