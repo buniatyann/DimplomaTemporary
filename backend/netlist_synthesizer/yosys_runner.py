@@ -6,6 +6,7 @@ import json
 import logging
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -14,6 +15,16 @@ from backend.core.exceptions import SynthesisError
 logger = logging.getLogger(__name__)
 
 SCRIPT_DIR = Path(__file__).parent / "scripts"
+
+
+def _to_short_path(p: str | Path) -> str:
+    """Convert a path to Windows 8.3 short form to avoid Unicode issues."""
+    if sys.platform != "win32":
+        return str(p)
+    import ctypes
+    buf = ctypes.create_unicode_buffer(260)
+    ret = ctypes.windll.kernel32.GetShortPathNameW(str(p), buf, 260)
+    return buf.value if ret else str(p)
 
 
 class YosysRunner:
@@ -43,6 +54,14 @@ class YosysRunner:
         """
         return self._run_script("synthesize.ys", source_paths)
 
+    def preprocess(self, source_paths: list[Path]) -> tuple[dict, str, str]:
+        """Run preprocessing flow (elaborate + flatten) for training data.
+
+        Returns:
+            Tuple of (json_netlist_dict, stdout, stderr).
+        """
+        return self._run_script("preprocess.ys", source_paths)
+
     def _run_script(
         self, script_name: str, source_paths: list[Path]
     ) -> tuple[dict, str, str]:
@@ -55,7 +74,6 @@ class YosysRunner:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)
-            json_output = tmpdir_path / "netlist.json"
 
             # Build the Yosys script
             script_template = SCRIPT_DIR / script_name
@@ -63,16 +81,30 @@ class YosysRunner:
                 raise SynthesisError(f"Yosys script template not found: {script_template}")
 
             template_content = script_template.read_text()
-            read_commands = "\n".join(f"read_verilog {p}" for p in source_paths)
+
+            # Copy source files to temp dir to avoid Unicode path issues on Windows
+            local_paths = []
+            for i, p in enumerate(source_paths):
+                local_name = f"input_{i}_{Path(p).name}"
+                local_copy = tmpdir_path / local_name
+                shutil.copy2(p, local_copy)
+                local_paths.append(local_name)
+
+            read_commands = "\n".join(f"read_verilog {lp}" for lp in local_paths)
             script_content = template_content.replace("{{READ_FILES}}", read_commands)
-            script_content = script_content.replace("{{JSON_OUTPUT}}", str(json_output))
+            # Use relative path for JSON output since cwd=tmpdir
+            script_content = script_content.replace("{{JSON_OUTPUT}}", "netlist.json")
 
             script_path = tmpdir_path / "run.ys"
-            script_path.write_text(script_content)
+            script_path.write_text(script_content, encoding="utf-8")
+
+            # Use Windows short paths to avoid Unicode issues with Yosys
+            yosys_exe = _to_short_path(self._yosys_path)
+            script_arg = _to_short_path(script_path)
 
             try:
                 result = subprocess.run(
-                    [self._yosys_path, "-s", str(script_path)],  # type: ignore[arg-type]
+                    [yosys_exe, "-s", script_arg],
                     capture_output=True,
                     text=True,
                     timeout=self._timeout,
@@ -99,6 +131,7 @@ class YosysRunner:
                 )
 
             # Parse JSON output
+            json_output = tmpdir_path / "netlist.json"
             json_netlist: dict = {}
             if json_output.exists():
                 try:
