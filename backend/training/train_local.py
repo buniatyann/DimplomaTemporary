@@ -1433,8 +1433,7 @@ def train_model(
 
     # ---- focal loss for node-level (handles extreme imbalance better) ----
     node_focal_loss = FocalLoss(alpha=node_weight, gamma=2.0).to(device)
-    logger.info("Using FocalLoss(gamma=2.0) for node-level classification")
-    logger.info("Loss weighting: 30% graph + 70% node (prioritize localization)")
+    logger.info("Graph-only training: localization will be done algorithmically at inference")
 
     best_val_loss = float("inf")
     best_val_f1 = 0.0
@@ -1470,7 +1469,7 @@ def train_model(
                 else:
                     n_loss = torch.tensor(0.0, device=device)
 
-                loss = 0.3 * g_loss + 0.7 * n_loss  # prioritize node localization
+                loss = g_loss  # graph-only: localization done algorithmically at inference
 
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
@@ -1512,7 +1511,7 @@ def train_model(
                         val_npreds.extend(nl.argmax(1).cpu().numpy())
                     else:
                         n_loss = torch.tensor(0.0, device=device)
-                    loss = 0.3 * g_loss + 0.7 * n_loss
+                    loss = g_loss
 
                 val_loss += loss.item() * batch.num_graphs
                 val_total += batch.num_graphs
