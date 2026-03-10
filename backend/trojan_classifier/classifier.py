@@ -18,6 +18,7 @@ from backend.netlist_graph_builder.models import CircuitGraph
 from backend.trojan_classifier.architectures.gat import GATClassifier
 from backend.trojan_classifier.architectures.gcn import GCNClassifier
 from backend.trojan_classifier.architectures.gin import GINClassifier
+from backend.trojan_classifier.localization import localize_trojans
 from backend.trojan_classifier.models import (
     ClassificationResult,
     TrojanLocation,
@@ -233,7 +234,7 @@ class TrojanClassifier:
         self._model.eval()
 
     def _classify(self, circuit_graph: CircuitGraph) -> ClassificationResult:
-        """Run inference on a circuit graph with trojan localization."""
+        """Run inference on a circuit graph with algorithmic trojan localization."""
         assert self._model is not None
 
         data = circuit_graph.graph_data
@@ -245,7 +246,6 @@ class TrojanClassifier:
         with torch.no_grad():
             graph_logits, node_logits = self._model(data.x, data.edge_index, batch)
             graph_probs = F.softmax(graph_logits, dim=1)
-            node_probs = F.softmax(node_logits, dim=1)
 
         # Class 0 = clean, Class 1 = infected
         trojan_prob = graph_probs[0, 1].item()
@@ -259,19 +259,17 @@ class TrojanClassifier:
         else:
             verdict = TrojanVerdict.CLEAN
 
-        # Stage 2 (node localization) only runs on flagged circuits.
-        # Skipping it for CLEAN circuits eliminates false positive nodes
-        # from clean circuits contributing to node-level precision loss.
+        # Stage 2: algorithmic localization only runs on flagged circuits.
         if verdict == TrojanVerdict.CLEAN:
-            logger.debug("Graph classified as CLEAN — skipping node-level localization.")
+            logger.debug("Graph classified as CLEAN — skipping localization.")
             gate_scores: dict[str, float] = {}
             trojan_locations = []
             trojan_percentage = 0.0
             high_risk = False
             trojan_modules: list[str] = []
         else:
-            # Use node-level predictions for per-node suspicion scores
-            gate_scores = self._extract_node_scores(circuit_graph, node_probs)
+            # Algorithmic localization via structural anomaly detection
+            gate_scores = localize_trojans(circuit_graph, self._suspicion_threshold)
 
             # Identify trojan locations for nodes above threshold
             trojan_locations = self._locate_trojans(circuit_graph, gate_scores)
@@ -300,28 +298,6 @@ class TrojanClassifier:
             high_risk=high_risk,
             risk_threshold=self._risk_threshold,
         )
-
-    def _extract_node_scores(
-        self, circuit_graph: CircuitGraph, node_probs: torch.Tensor,
-    ) -> dict[str, float]:
-        """Extract per-node trojan probability from node-level predictions.
-
-        Args:
-            circuit_graph: The circuit graph.
-            node_probs: Softmax output from the node head, shape (num_nodes, 2).
-
-        Returns:
-            Dict mapping gate names to their trojan probability [0, 1].
-        """
-        # Column 1 = trojan probability per node
-        scores = node_probs[:, 1].cpu().tolist()
-
-        gate_scores: dict[str, float] = {}
-        for idx, score in enumerate(scores):
-            gate_name = circuit_graph.node_to_gate.get(idx, f"node_{idx}")
-            gate_scores[gate_name] = round(score, 6)
-
-        return gate_scores
 
     def _locate_trojans(
         self,
@@ -371,7 +347,7 @@ class TrojanClassifier:
             if self._matches_trojan_pattern(gate_name):
                 detection_method = "name_pattern"
             else:
-                detection_method = "gnn_attribution"
+                detection_method = "structural"
 
             location = TrojanLocation(
                 node_index=node_idx,
