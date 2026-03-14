@@ -18,7 +18,7 @@ class GATClassifier(torch.nn.Module):
         self,
         input_dim: int,
         hidden_dim: int = 128,
-        num_layers: int = 4,
+        num_layers: int = 3,
         heads: int = 4,
         dropout: float = 0.3,
     ) -> None:
