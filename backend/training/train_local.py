@@ -43,6 +43,7 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
     f1_score,
+    fbeta_score,
     precision_score,
     recall_score,
     roc_auc_score,
@@ -1143,6 +1144,7 @@ def compute_metrics(y_true: list, y_pred: list, y_proba: list | None = None, pre
     m[f"{prefix}precision"] = precision_score(y_true_a, y_pred_a, zero_division=0)
     m[f"{prefix}recall"] = recall_score(y_true_a, y_pred_a, zero_division=0)
     m[f"{prefix}f1"] = f1_score(y_true_a, y_pred_a, zero_division=0)
+    m[f"{prefix}f2"] = fbeta_score(y_true_a, y_pred_a, beta=2, zero_division=0)
 
     if y_proba is not None and len(np.unique(y_true_a)) > 1:
         try:
@@ -1199,18 +1201,15 @@ class TopKScoreTracker:
         epoch: int,
         architecture: str,
         val_metrics: dict,
-        val_node_metrics: dict | None = None,
     ) -> None:
         """Record an epoch's scores if they make the top K."""
         timestamp = datetime.now().isoformat()
 
         entries = [
             ("graph_f1", val_metrics.get("val_f1", 0.0)),
+            ("graph_f2", val_metrics.get("val_f2", 0.0)),
             ("graph_auc_roc", val_metrics.get("val_roc_auc", 0.0)),
         ]
-        if val_node_metrics:
-            entries.append(("node_f1", val_node_metrics.get("val_node_f1", 0.0)))
-            entries.append(("node_auc_roc", val_node_metrics.get("val_node_roc_auc", 0.0)))
 
         for key, score in entries:
             if score <= 0:
@@ -1231,7 +1230,7 @@ class TopKScoreTracker:
     def summary(self) -> str:
         """Return a formatted string of the leaderboard."""
         lines = ["", "=" * 60, "  TOP-10 SCORE LEADERBOARD", "=" * 60]
-        for key in ("graph_f1", "graph_auc_roc", "node_f1", "node_auc_roc"):
+        for key in ("graph_f1", "graph_f2", "graph_auc_roc"):
             board = self._board.get(key, [])
             if not board:
                 continue
@@ -1546,11 +1545,6 @@ def train_model(
                 f"Train Loss={train_loss:.4f} Acc={train_m['train_accuracy']:.3f} F1={train_m['train_f1']:.3f} | "
                 f"Val Loss={val_loss:.4f} Acc={val_m['val_accuracy']:.3f} F1={val_m['val_f1']:.3f}"
             )
-            if vn_m:
-                logger.info(
-                    f"         Node | Train F1={tn_m.get('train_node_f1',0):.3f} | "
-                    f"Val F1={vn_m.get('val_node_f1',0):.3f}"
-                )
 
         # ---- checkpoint ----
         cur_f1 = val_m["val_f1"]
@@ -1722,20 +1716,13 @@ def main() -> int:
     logger.info(f"  Precision     : {fv['val_precision']:.4f}")
     logger.info(f"  Recall        : {fv['val_recall']:.4f}")
     logger.info(f"  F1            : {fv['val_f1']:.4f}")
+    logger.info(f"  F2            : {fv['val_f2']:.4f}")
     if "val_roc_auc" in fv:
         logger.info(f"  ROC-AUC       : {fv['val_roc_auc']:.4f}")
 
     cm = fv["val_confusion_matrix"]
     logger.info(f"  Confusion: TN={cm[0,0]}  FP={cm[0,1]}")
     logger.info(f"             FN={cm[1,0]}  TP={cm[1,1]}")
-
-    fn = result["final_val_node_metrics"]
-    if fn:
-        logger.info("Validation — Node-Level:")
-        logger.info(f"  Accuracy  : {fn.get('val_node_accuracy', 0):.4f}")
-        logger.info(f"  Precision : {fn.get('val_node_precision', 0):.4f}")
-        logger.info(f"  Recall    : {fn.get('val_node_recall', 0):.4f}")
-        logger.info(f"  F1        : {fn.get('val_node_f1', 0):.4f}")
 
     # ---- test set results ----
     tm = result["test_metrics"]
@@ -1745,20 +1732,13 @@ def main() -> int:
     logger.info(f"  Precision : {tm['test_precision']:.4f}")
     logger.info(f"  Recall    : {tm['test_recall']:.4f}")
     logger.info(f"  F1        : {tm['test_f1']:.4f}")
+    logger.info(f"  F2        : {tm['test_f2']:.4f}")
     if "test_roc_auc" in tm:
         logger.info(f"  ROC-AUC   : {tm['test_roc_auc']:.4f}")
 
     tcm = tm["test_confusion_matrix"]
     logger.info(f"  Confusion: TN={tcm[0,0]}  FP={tcm[0,1]}")
     logger.info(f"             FN={tcm[1,0]}  TP={tcm[1,1]}")
-
-    tnm = result["test_node_metrics"]
-    if tnm:
-        logger.info("TEST SET — Node-Level:")
-        logger.info(f"  Accuracy  : {tnm.get('test_node_accuracy', 0):.4f}")
-        logger.info(f"  Precision : {tnm.get('test_node_precision', 0):.4f}")
-        logger.info(f"  Recall    : {tnm.get('test_node_recall', 0):.4f}")
-        logger.info(f"  F1        : {tnm.get('test_node_f1', 0):.4f}")
 
     logger.info(f"\nWeights: backend/trojan_classifier/weights/{args.architecture}_weights.pt")
 
@@ -1795,8 +1775,7 @@ def main() -> int:
     tracker = TopKScoreTracker(tracker_path)
     for rec in result["history"]:
         val_m_rec = {k: v for k, v in rec.items() if k.startswith("val_") and "node" not in k}
-        vn_m_rec = {k: v for k, v in rec.items() if k.startswith("val_node_")}
-        tracker.update(rec["epoch"], args.architecture, val_m_rec, vn_m_rec or None)
+        tracker.update(rec["epoch"], args.architecture, val_m_rec)
     logger.info(tracker.summary())
 
     # ---- matplotlib plots ----
