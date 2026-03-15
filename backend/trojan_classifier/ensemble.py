@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 import time
 from pathlib import Path
@@ -23,6 +24,7 @@ from backend.trojan_classifier.models import (
     TrojanLocation,
     TrojanVerdict,
 )
+from backend.trojan_classifier.structural_verifier import StructuralVerifier
 
 if TYPE_CHECKING:
     from backend.syntax_parser.models import ParsedModule
@@ -111,6 +113,10 @@ class EnsembleClassifier:
 
         # Lazily loaded models: arch_name -> nn.Module
         self._models: dict[str, torch.nn.Module] = {}
+
+        # Structural verifier for resolving UNCERTAIN verdicts
+        self._structural_verifier = StructuralVerifier()
+        self._structural_verifier.load_baseline()
 
     # ------------------------------------------------------------------
     # Public API
@@ -316,6 +322,23 @@ class EnsembleClassifier:
         high_risk = trojan_percentage >= self._risk_threshold
         trojan_modules = list({loc.module_name for loc in trojan_locations})
 
+        # Sanity check: use multiple signals to detect likely false positives.
+        if verdict == TrojanVerdict.INFECTED:
+            should_downgrade, reason = self._is_likely_false_positive(
+                total_nodes, suspicious_count, trojan_percentage,
+                trojan_locations, gate_scores, model_agreement,
+            )
+            if should_downgrade:
+                verdict = TrojanVerdict.UNCERTAIN
+                self._history.warning(STAGE, f"Downgraded INFECTED -> UNCERTAIN: {reason}")
+
+        # Structural verification: resolve UNCERTAIN verdicts using graph
+        # invariant comparison against a clean-circuit baseline.
+        if verdict == TrojanVerdict.UNCERTAIN and self._structural_verifier.has_baseline:
+            sv_verdict, sv_reason = self._structural_verifier.verify(circuit_graph)
+            self._history.info(STAGE, f"[structural_verifier] {sv_reason}")
+            verdict = sv_verdict
+
         return ClassificationResult(
             verdict=verdict,
             confidence=round(ensemble_confidence, 6),
@@ -492,6 +515,89 @@ class EnsembleClassifier:
             r"(?i)^ht_", r"(?i)backdoor", r"(?i)leak",
         ]
         return any(re.search(p, name) for p in patterns)
+
+    # ------------------------------------------------------------------
+    # False positive detection
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_likely_false_positive(
+        total_nodes: int,
+        suspicious_count: int,
+        trojan_percentage: float,
+        trojan_locations: list[TrojanLocation],
+        gate_scores: dict[str, float],
+        model_agreement: float,
+    ) -> tuple[bool, str]:
+        """Detect likely false positives using multiple structural signals.
+
+        Real hardware trojans are a small fraction of the circuit. When the
+        localization flags nearly everything, it usually means the model was
+        confused by an unusual but benign topology rather than finding a
+        genuine trojan.
+
+        Returns:
+            (should_downgrade, reason) — True + explanation if likely FP.
+        """
+        if trojan_percentage < 90.0:
+            return False, ""
+
+        # ── Signal 1: Suspicion score variance ──
+        # Real trojans produce a bimodal distribution (high scores for trojan
+        # gates, low for the rest).  False positives produce uniformly similar
+        # scores because the localization can't differentiate anything.
+        scores = list(gate_scores.values())
+        if len(scores) >= 2:
+            mean_s = sum(scores) / len(scores)
+            variance = sum((s - mean_s) ** 2 for s in scores) / len(scores)
+        else:
+            variance = 0.0
+
+        # ── Signal 2: Graph size ──
+        # Larger circuits are far less likely to be 100% trojan.
+        # Use log-scaled size so the threshold adapts smoothly.
+        size_factor = math.log2(max(total_nodes, 2))
+
+        # ── Signal 3: Score concentration near threshold ──
+        # If most suspicious nodes barely exceed the suspicion threshold (0.3),
+        # the localization is not confident — scores are noise, not signal.
+        threshold = 0.3
+        margin = 0.15  # scores within [threshold, threshold + margin] are "weak"
+        weak_count = sum(
+            1 for loc in trojan_locations
+            if loc.suspicion_score < threshold + margin
+        )
+        weak_ratio = weak_count / max(suspicious_count, 1)
+
+        # ── Combined decision ──
+        # For small circuits (< 8 nodes), don't downgrade — trojan-only
+        # modules like TSC.v can legitimately be entirely malicious.
+        if total_nodes < 8:
+            return False, ""
+
+        # Low variance + high suspicious % + large circuit → likely FP
+        # The thresholds scale with graph size so small circuits are lenient.
+        variance_threshold = 0.005 * size_factor  # ~0.02 for 16 nodes, ~0.035 for 128
+        if (
+            trojan_percentage >= 95.0
+            and variance < variance_threshold
+            and total_nodes >= 15
+        ):
+            return True, (
+                f"{trojan_percentage:.1f}% of {total_nodes} nodes flagged with low "
+                f"score variance ({variance:.4f} < {variance_threshold:.4f}), "
+                f"indicating the model cannot differentiate trojan from benign gates."
+            )
+
+        # Nearly all scores are weak (barely above threshold)
+        if weak_ratio >= 0.85 and trojan_percentage >= 95.0 and total_nodes >= 15:
+            return True, (
+                f"{trojan_percentage:.1f}% of {total_nodes} nodes flagged, but "
+                f"{weak_ratio:.0%} of suspicious scores are within {margin} of the "
+                f"threshold, indicating low localization confidence."
+            )
+
+        return False, ""
 
     # ------------------------------------------------------------------
     # History recording
