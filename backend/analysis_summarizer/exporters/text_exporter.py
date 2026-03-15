@@ -239,6 +239,8 @@ class TextExporter:
                         )
        
                     lines.append("")
+
+
         else:
             lines.append(self._section_header("Classification Results"))
             lines.append("  Classification was not reached (earlier stage failed).")
