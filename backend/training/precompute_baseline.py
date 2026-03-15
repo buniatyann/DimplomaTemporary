@@ -41,6 +41,15 @@ def collect_clean_verilog_files(data_dir: Path) -> list[Path]:
         if epfl.exists():
             clean_files.extend(sorted(epfl.glob("*.v")))
 
+    # HDL benchmarks (IWLS, LGSYNTH, OpenCores, etc. — all clean)
+    # Subdirectories are symlinks, so resolve each one before rglob.
+    hdl = data_dir / "hdl_benchmarks"
+    if hdl.exists():
+        for subdir in sorted(hdl.iterdir()):
+            resolved = subdir.resolve()
+            if resolved.is_dir():
+                clean_files.extend(sorted(resolved.rglob("*.v")))
+
     # TrustHub trojan-free references
     trit_free = data_dir / "trit" / "TjFree"
     if trit_free.exists():
