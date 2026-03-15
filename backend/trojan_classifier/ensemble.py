@@ -375,7 +375,25 @@ class EnsembleClassifier:
                     source_file = source_path
                     # Fall back to regex search if parser didn't capture line number
                     if line_number is None:
-                        line_number = self._find_gate_line(Path(source_path), gate_name)
+                        result = self._find_gate_line(Path(source_path), gate_name)
+                        if result is not None:
+                            line_number, found_type = result
+                            if gate_type == "unknown":
+                                gate_type = found_type
+
+            # If gate_lookup missed, try regex search across all source files
+            if source_file is None and self._parsed_modules:
+                for mod in self._parsed_modules:
+                    if mod.source_path:
+                        result = self._find_gate_line(Path(mod.source_path), gate_name)
+                        if result is not None:
+                            line_number, found_type = result
+                            source_file = mod.source_path
+                            if module_name == "unknown":
+                                module_name = mod.name
+                            if gate_type == "unknown":
+                                gate_type = found_type
+                            break
 
             if self._matches_trojan_pattern(gate_name):
                 detection_method = "name_pattern"
@@ -417,20 +435,51 @@ class EnsembleClassifier:
                     "gate_type": gate.canonical_type or gate.gate_type,
                     "line_number": gate.line_number,
                 }
+            # Also index ports and wires so Yosys-synthesized names resolve
+            for port in module.ports:
+                if port.name not in lookup:
+                    direction = port.direction.value if hasattr(port.direction, "value") else str(port.direction)
+                    lookup[port.name] = {
+                        "module_name": module.name,
+                        "gate_type": direction,
+                        "line_number": port.line_number,
+                    }
+            for wire in module.wires:
+                if wire.name not in lookup:
+                    lookup[wire.name] = {
+                        "module_name": module.name,
+                        "gate_type": "wire",
+                        "line_number": wire.line_number,
+                    }
         return lookup
 
-    def _find_gate_line(self, source_file: Path, gate_name: str) -> int | None:
+    def _find_gate_line(
+        self, source_file: Path, gate_name: str,
+    ) -> tuple[int, str] | None:
+        """Search source file for gate_name, return (line_number, hdl_type) or None."""
         if not source_file.exists():
             return None
+        escaped = re.escape(gate_name)
         try:
             with open(source_file, "r", encoding="utf-8", errors="replace") as f:
                 for line_num, line in enumerate(f, start=1):
-                    if re.search(rf'\b{re.escape(gate_name)}\s*\(', line):
-                        return line_num
-                    if re.search(rf'\.\w+\s*\(\s*{re.escape(gate_name)}\s*\)', line):
-                        return line_num
-                    if re.search(rf'\b(wire|reg)\b.*\b{re.escape(gate_name)}\b', line):
-                        return line_num
+                    # Input/output/inout declaration
+                    m = re.search(rf'\b(input|output|inout)\b.*\b{escaped}\b', line)
+                    if m:
+                        return line_num, m.group(1)
+                    # Wire/reg declaration
+                    m = re.search(rf'\b(wire|reg)\b.*\b{escaped}\b', line)
+                    if m:
+                        return line_num, m.group(1)
+                    # Gate instantiation: gate_name(
+                    if re.search(rf'\b{escaped}\s*\(', line):
+                        return line_num, "gate"
+                    # Port connection: .port(gate_name)
+                    if re.search(rf'\.\w+\s*\(\s*{escaped}\s*\)', line):
+                        return line_num, "net"
+                    # Assignment: assign gate_name = or gate_name <=
+                    if re.search(rf'\b{escaped}\s*(<?\s*=)', line):
+                        return line_num, "assign"
         except Exception as e:
             logger.debug(f"Could not search {source_file}: {e}")
         return None
@@ -491,6 +540,8 @@ class EnsembleClassifier:
                     module: [
                         {
                             "gate": loc.gate_name,
+                            "type": loc.gate_type,
+                            "file": loc.source_file,
                             "line": loc.line_number,
                             "score": loc.suspicion_score,
                         }
