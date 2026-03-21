@@ -1,4 +1,4 @@
-"""SyntaxParser facade for routing to the appropriate parser implementation."""
+"""SyntaxParser facade — delegates all parsing to pyslang."""
 
 from __future__ import annotations
 
@@ -12,11 +12,9 @@ from backend.core.outcome import StageOutcome
 from backend.file_ingestion.models import (
     DirectoryManifest,
     FileEntry,
-    FileType,
 )
 from backend.syntax_parser.models import ParsedModule
 from backend.syntax_parser.systemverilog_parser import SystemVerilogParser
-from backend.syntax_parser.verilog_parser import VerilogParser
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +22,11 @@ STAGE = "syntax_parser"
 
 
 class SyntaxParser:
-    """Facade that selects and delegates to the appropriate parser."""
+    """Facade that delegates parsing to pyslang for all file types."""
 
     def __init__(self, history: History) -> None:
         self._history = history
-        self._verilog_parser = VerilogParser(history)
-        self._sv_parser = SystemVerilogParser(history)
+        self._parser = SystemVerilogParser(history)
 
     def process(
         self, manifest: DirectoryManifest
@@ -52,7 +49,7 @@ class SyntaxParser:
 
         for file_entry in manifest.files:
             try:
-                modules = self._parse_file(file_entry)
+                modules = self._parser.parse(file_entry.path)
                 all_modules.extend(modules)
                 for m in modules:
                     total_gates += len(m.gates)
@@ -89,22 +86,3 @@ class SyntaxParser:
         )
         self._history.end_stage(STAGE, status="completed")
         return StageOutcome.ok(all_modules, stage_name=STAGE)
-
-    def _parse_file(self, file_entry: FileEntry) -> list[ParsedModule]:
-        """Route a file to the appropriate parser based on its type."""
-        parser_name: str
-
-        if file_entry.file_type == FileType.SYSTEMVERILOG:
-            parser_name = "SystemVerilogParser (pyslang)"
-            self._history.info(
-                STAGE,
-                f"Selected {parser_name} for {file_entry.path.name}",
-            )
-            return self._sv_parser.parse(file_entry.path)
-        else:
-            parser_name = "VerilogParser (pyverilog)"
-            self._history.info(
-                STAGE,
-                f"Selected {parser_name} for {file_entry.path.name}",
-            )
-            return self._verilog_parser.parse(file_entry.path)
