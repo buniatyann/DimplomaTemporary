@@ -92,7 +92,7 @@ class DetectionPipeline:
         if parse_outcome.success:
             synth_outcome = synthesizer.process(parse_outcome.data)
         else:
-            # Fallback: bypass pyverilog and run Yosys directly on source files
+            # Fallback: bypass parser and run Yosys directly on source files
             history.info("netlist_synthesizer", "Parser failed — falling back to direct Yosys synthesis")
             source_paths = [f.path for f in ingestion_outcome.data.files]
             synth_outcome = synthesizer.process_paths(source_paths)
