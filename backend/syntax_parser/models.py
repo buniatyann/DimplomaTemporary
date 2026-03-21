@@ -55,3 +55,33 @@ class ParsedModule(BaseModel):
     ports: list[Port] = Field(default_factory=list)
     submodule_refs: list[str] = Field(default_factory=list)
     source_path: str = ""
+
+
+# Mapping from common cell library gate names to canonical types
+CANONICAL_GATE_MAP: dict[str, str] = {
+    "and": "AND",
+    "nand": "NAND",
+    "or": "OR",
+    "nor": "NOR",
+    "xor": "XOR",
+    "xnor": "XNOR",
+    "not": "NOT",
+    "buf": "BUF",
+    "inv": "INV",
+    "mux": "MUX",
+    "dff": "DFF",
+    "latch": "LATCH",
+}
+
+
+def normalize_gate_type(gate_type: str) -> str:
+    """Normalize a gate type name to its canonical form."""
+    lower = gate_type.lower()
+    if lower in CANONICAL_GATE_MAP:
+        return CANONICAL_GATE_MAP[lower]
+    
+    for prefix, canonical in CANONICAL_GATE_MAP.items():
+        if lower.startswith(prefix):
+            return canonical
+    
+    return gate_type.upper()

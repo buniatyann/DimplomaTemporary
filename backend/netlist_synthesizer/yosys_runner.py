@@ -30,7 +30,7 @@ def _to_short_path(p: str | Path) -> str:
 class YosysRunner:
     """Manages subprocess communication with the Yosys synthesis tool."""
 
-    def __init__(self, timeout: int = 300) -> None:
+    def __init__(self, timeout: int = 1800) -> None:
         self._timeout = timeout
         self._yosys_path = shutil.which("yosys")
 
@@ -82,12 +82,15 @@ class YosysRunner:
 
             template_content = script_template.read_text()
 
-            # Copy source files to temp dir to avoid Unicode path issues on Windows
+            # Copy source files to temp dir, applying compatibility fixes
             local_paths = []
             for i, p in enumerate(source_paths):
                 local_name = f"input_{i}_{Path(p).name}"
                 local_copy = tmpdir_path / local_name
-                shutil.copy2(p, local_copy)
+                content = Path(p).read_text(encoding="utf-8", errors="replace")
+                # Yosys doesn't support 'trireg' — substitute with 'wire'
+                content = content.replace("trireg ", "wire    ")
+                local_copy.write_text(content, encoding="utf-8")
                 local_paths.append(local_name)
 
             read_commands = "\n".join(f"read_verilog {lp}" for lp in local_paths)
