@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Evaluate GNN models on TrustHub benchmarks using Yosys-only pipeline.
 
-Bypasses pyverilog entirely — feeds all .v files per benchmark directory
+Feeds all .v files per benchmark directory
 directly to Yosys for elaboration, builds graphs from the JSON netlist,
 then runs GCN/GAT/GIN ensemble classification.
 
