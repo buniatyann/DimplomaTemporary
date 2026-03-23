@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from gui.config import GUIConfig
 from gui.file_explorer import FileExplorer
-from gui.log_viewer import LogViewer
+from gui.tabbed_log_panel import TabbedLogPanel
 from gui.state import AppState, AppStateManager, FileStatus
 from gui.toolbar import Toolbar
 from gui.workers import DetectionWorker
@@ -45,13 +45,13 @@ class MainWindow(QMainWindow):
         self.addToolBar(self._toolbar)
 
         self._file_explorer = FileExplorer(self._state_mgr, self)
-        self._log_viewer = LogViewer(max_lines=self._config.max_log_lines, parent=self)
-        self._log_viewer.auto_scroll = self._config.auto_scroll
+        self._log_panel = TabbedLogPanel(max_lines=self._config.max_log_lines, parent=self)
+        self._log_panel.auto_scroll = self._config.auto_scroll
 
         # ── Layout ──
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
         splitter.addWidget(self._file_explorer)
-        splitter.addWidget(self._log_viewer)
+        splitter.addWidget(self._log_panel)
         splitter.setSizes(self._config.splitter_sizes)
         self._splitter = splitter
         self.setCentralWidget(splitter)
@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
         # ── Connect signals ──
         self._connect_signals()
 
-        self._log_viewer.log_info("Hardware Trojan Detector ready.")
+        self._log_panel.log_info("Hardware Trojan Detector ready.")
 
     # ------------------------------------------------------------------
     # Stylesheet
@@ -78,8 +78,8 @@ class MainWindow(QMainWindow):
             self.setStyleSheet(qss_path.read_text(encoding="utf-8"))
         else:
             logger.warning("Theme stylesheet not found at %s", qss_path)
-        if hasattr(self, "_log_viewer"):
-            self._log_viewer.set_theme(theme)
+        if hasattr(self, "_log_panel"):
+            self._log_panel.set_theme(theme)
 
     # ------------------------------------------------------------------
     # Signal wiring
@@ -94,7 +94,7 @@ class MainWindow(QMainWindow):
         tb.run_detection_clicked.connect(self._start_detection)
         tb.stop_clicked.connect(self._stop_detection)
         tb.remove_checked_clicked.connect(self._remove_checked)
-        tb.clear_log_clicked.connect(self._log_viewer.clear)
+        tb.clear_log_clicked.connect(self._log_panel.clear)
         tb.export_results_clicked.connect(self._export_results)
         tb.toggle_paths_clicked.connect(self._file_explorer.toggle_absolute_paths)
         tb.theme_toggled.connect(self._apply_stylesheet)
@@ -113,17 +113,17 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     def _on_files_added(self, paths: list[str]) -> None:
         for p in paths:
-            self._log_viewer.log_info(f"Added: {Path(p).name}")
+            self._log_panel.log_info(f"Added: {Path(p).name}")
         self._status_bar.showMessage(f"{len(self._file_explorer.all_paths())} file(s) loaded")
 
     def _on_file_removed(self, path: str) -> None:
-        self._log_viewer.log_info(f"Removed: {Path(path).name}")
+        self._log_panel.log_info(f"Removed: {Path(path).name}")
         self._last_results.pop(path, None)
 
     def _remove_checked(self) -> None:
         checked = self._file_explorer.checked_paths()
         if not checked:
-            self._log_viewer.log_warning("No checked files to remove.")
+            self._log_panel.log_warning("No checked files to remove.")
             return
         self._file_explorer.remove_checked()
         self._status_bar.showMessage(f"{len(self._file_explorer.all_paths())} file(s) loaded")
@@ -134,14 +134,14 @@ class MainWindow(QMainWindow):
     def _start_detection_all(self) -> None:
         paths = self._file_explorer.all_paths()
         if not paths:
-            self._log_viewer.log_warning("No files loaded.")
+            self._log_panel.log_warning("No files loaded.")
             return
         self._run_detection(paths)
 
     def _start_detection(self) -> None:
         paths = self._file_explorer.checked_paths()
         if not paths:
-            self._log_viewer.log_warning("No checked files to analyse.")
+            self._log_panel.log_warning("No checked files to analyse.")
             return
         self._run_detection(paths)
 
@@ -153,7 +153,7 @@ class MainWindow(QMainWindow):
         self._state_mgr.set_state(AppState.PROCESSING)
         selected = self._toolbar.selected_models
         model_desc = ", ".join(m.upper() for m in selected)
-        self._log_viewer.log_info(
+        self._log_panel.log_info(
             f"Starting detection on {len(paths)} file(s) using {model_desc}..."
         )
 
@@ -170,7 +170,7 @@ class MainWindow(QMainWindow):
     def _stop_detection(self) -> None:
         if self._worker:
             self._state_mgr.set_state(AppState.CANCELLING)
-            self._log_viewer.log_warning("Cancelling detection...")
+            self._log_panel.log_warning("Cancelling detection...")
             self._worker.cancel()
 
     # ------------------------------------------------------------------
@@ -178,7 +178,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     def _on_file_started(self, path: str) -> None:
         self._state_mgr.set_file_status(path, FileStatus.PROCESSING)
-        self._log_viewer.log_info(f"Processing: {Path(path).name}")
+        self._log_panel.log_info(f"Processing: {Path(path).name}")
 
     def _on_file_completed(self, path: str, result: dict[str, Any]) -> None:
         is_trojan = result.get("is_trojan", False)
@@ -191,17 +191,17 @@ class MainWindow(QMainWindow):
 
         if errors and verdict == "N/A":
             self._state_mgr.set_file_status(path, FileStatus.ERROR)
-            self._log_viewer.log_alert(
+            self._log_panel.log_alert(
                 f"{Path(path).name}: Pipeline error — {errors[0]}"
             )
         elif is_trojan:
             self._state_mgr.set_file_status(path, FileStatus.INFECTED)
-            self._log_viewer.log_alert(
+            self._log_panel.log_alert(
                 f"{Path(path).name}: {verdict} (confidence {confidence:.1%})"
             )
         else:
             self._state_mgr.set_file_status(path, FileStatus.CLEAN)
-            self._log_viewer.log_ok(
+            self._log_panel.log_ok(
                 f"{Path(path).name}: {verdict} (confidence {confidence:.1%})"
             )
 
@@ -222,7 +222,7 @@ class MainWindow(QMainWindow):
 
     def _on_file_error(self, path: str, error_msg: str) -> None:
         self._state_mgr.set_file_status(path, FileStatus.ERROR)
-        self._log_viewer.log_alert(f"Error on {Path(path).name}: {error_msg}")
+        self._log_panel.log_alert(f"Error on {Path(path).name}: {error_msg}")
         self._last_results[path] = {
             "is_trojan": False,
             "confidence": 0.0,
@@ -240,7 +240,7 @@ class MainWindow(QMainWindow):
         infected = sum(
             1 for r in self._last_results.values() if r.get("is_trojan")
         )
-        self._log_viewer.log_info(
+        self._log_panel.log_info(
             f"Detection complete. {infected}/{total} file(s) flagged."
         )
         self._status_bar.showMessage(
@@ -260,28 +260,26 @@ class MainWindow(QMainWindow):
     def _on_file_double_clicked(self, path: str) -> None:
         result = self._last_results.get(path)
         if result is None:
-            self._log_viewer.log_warning(
+            self._log_panel.log_warning(
                 f"No report for {Path(path).name}. Run detection first."
             )
             return
 
         report_text = result.get("report_text", "")
         if not report_text:
-            self._log_viewer.log_warning(
+            self._log_panel.log_warning(
                 f"No report text available for {Path(path).name}."
             )
             return
 
-        self._log_viewer.clear()
-        self._log_viewer.log_info(f"Report for {Path(path).name}:")
-        self._log_viewer.append_plain(report_text)
+        self._log_panel.open_report(path, report_text)
 
     # ------------------------------------------------------------------
     # Export
     # ------------------------------------------------------------------
     def _export_results(self) -> None:
         if not self._last_results:
-            self._log_viewer.log_warning("No results to export. Run detection first.")
+            self._log_panel.log_warning("No results to export. Run detection first.")
             return
 
         folder = QFileDialog.getExistingDirectory(self, "Export Directory")
@@ -320,9 +318,9 @@ class MainWindow(QMainWindow):
                     lines.append("")
                 export_path.write_text("\n".join(lines), encoding="utf-8")
 
-            self._log_viewer.log_ok(f"Results exported to {export_path}")
+            self._log_panel.log_ok(f"Results exported to {export_path}")
         except Exception as exc:
-            self._log_viewer.log_alert(f"Export failed: {exc}")
+            self._log_panel.log_alert(f"Export failed: {exc}")
 
     # ------------------------------------------------------------------
     # Persistence
@@ -331,7 +329,7 @@ class MainWindow(QMainWindow):
         self._config.window_width = self.width()
         self._config.window_height = self.height()
         self._config.splitter_sizes = self._splitter.sizes()
-        self._config.auto_scroll = self._log_viewer.auto_scroll
+        self._config.auto_scroll = self._log_panel.main_log.auto_scroll
         self._config.save()
 
         # Ensure worker shuts down
