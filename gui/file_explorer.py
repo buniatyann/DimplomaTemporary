@@ -31,7 +31,7 @@ from PySide6.QtGui import (
     QStandardItem,
     QStandardItemModel,
 )
-from PySide6.QtWidgets import QFileDialog, QMenu, QTreeView, QWidget
+from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QTreeView, QWidget
 
 from gui.state import FILE_STATUS_ICONS, AppStateManager, FileStatus
 
@@ -314,6 +314,20 @@ class FileExplorer(QTreeView):
     def _show_context_menu(self, pos) -> None:  # noqa: ANN001
         menu = QMenu(self)
 
+        # Path copy actions (only for file/dir items)
+        idx = self.indexAt(pos)
+        item = self._model.itemFromIndex(idx) if idx.isValid() else None
+        if item and item.data(_ROLE_KIND) in ("file", "dir"):
+            copy_full = QAction("Copy Full Path", self)
+            copy_full.triggered.connect(lambda: self._copy_path(item, relative=False))
+            menu.addAction(copy_full)
+
+            copy_rel = QAction("Copy Relative Path", self)
+            copy_rel.triggered.connect(lambda: self._copy_path(item, relative=True))
+            menu.addAction(copy_rel)
+
+            menu.addSeparator()
+
         remove_act = QAction("Remove Checked", self)
         remove_act.triggered.connect(self.remove_checked)
         menu.addAction(remove_act)
@@ -323,6 +337,20 @@ class FileExplorer(QTreeView):
         menu.addAction(open_folder_act)
 
         menu.exec(self.viewport().mapToGlobal(pos))
+
+    def _copy_path(self, item: QStandardItem, *, relative: bool) -> None:
+        """Copy the file/dir path to the system clipboard."""
+        path = item.data(_ROLE_PATH)
+        if not path:
+            return
+        if relative:
+            try:
+                path = str(Path(path).relative_to(Path.cwd()))
+            except ValueError:
+                pass  # fallback to absolute if not relative to cwd
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(path)
 
     def _open_containing_folder(self) -> None:
         # Use the item under cursor

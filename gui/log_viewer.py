@@ -33,12 +33,14 @@ class LogViewer(QPlainTextEdit):
         self.setMaximumBlockCount(max_lines)
         self._auto_scroll = True
         self._colours = self._DARK_COLOURS
+        self._colours_key = "dark"
         # Store entries for re-rendering on theme change
         self._entries: list[tuple[str, str]] = []  # (level, formatted_text)
 
     def set_theme(self, theme: str) -> None:
         """Switch colour palette and re-render all existing log entries."""
         self._colours = self._LIGHT_COLOURS if theme == "light" else self._DARK_COLOURS
+        self._colours_key = theme
         self._rerender()
 
     # ------------------------------------------------------------------
