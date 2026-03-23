@@ -163,6 +163,45 @@ QScrollBar::sub-line:horizontal {
     width: 0;
 }
 
+/* ── Tab Widget (Tabbed Log Panel) ── */
+QTabWidget::pane {
+    border: 1px solid #C8C8C8;
+    background-color: #FFFFFF;
+}
+
+QTabBar::tab {
+    background-color: #ECECEC;
+    color: #6E6E6E;
+    border: 1px solid #C8C8C8;
+    border-bottom: none;
+    padding: 6px 14px;
+    margin-right: 1px;
+    font-size: 12px;
+}
+
+QTabBar::tab:selected {
+    background-color: #FFFFFF;
+    color: #1E1E1E;
+    border-bottom: 2px solid #0078D4;
+}
+
+QTabBar::tab:hover:!selected {
+    background-color: #E0E0E0;
+    color: #1E1E1E;
+}
+
+QTabBar::close-button {
+    subcontrol-position: right;
+    padding: 4px;
+    border-radius: 3px;
+    width: 14px;
+    height: 14px;
+}
+
+QTabBar::close-button:hover {
+    background-color: #D0D0D0;
+}
+
 /* ── Context Menu ── */
 QMenu {
     background-color: #FFFFFF;
