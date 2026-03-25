@@ -332,12 +332,29 @@ class EnsembleClassifier:
                 verdict = TrojanVerdict.UNCERTAIN
                 self._history.warning(STAGE, f"Downgraded INFECTED -> UNCERTAIN: {reason}")
 
-        # Structural verification: resolve UNCERTAIN verdicts using graph
-        # invariant comparison against a clean-circuit baseline.
+        # Structural verification: advisory signal for UNCERTAIN verdicts.
+        # The structural verifier no longer blindly overrides — it only
+        # upgrades to INFECTED when the GNN already leans trojan (prob > 0.3),
+        # preventing false positives on structurally unusual but clean circuits.
         if verdict == TrojanVerdict.UNCERTAIN and self._structural_verifier.has_baseline:
             sv_verdict, sv_reason = self._structural_verifier.verify(circuit_graph)
             self._history.info(STAGE, f"[structural_verifier] {sv_reason}")
-            verdict = sv_verdict
+            if sv_verdict == TrojanVerdict.INFECTED and weighted_trojan_prob > 0.4:
+                verdict = TrojanVerdict.INFECTED
+                self._history.info(
+                    STAGE,
+                    f"[structural_verifier] Confirmed INFECTED "
+                    f"(GNN p(trojan)={weighted_trojan_prob:.4f} > 0.4 + structural anomalies)",
+                )
+            elif sv_verdict == TrojanVerdict.CLEAN:
+                verdict = TrojanVerdict.CLEAN
+            else:
+                # Structural says INFECTED but GNN disagrees — stay UNCERTAIN
+                self._history.info(
+                    STAGE,
+                    f"[structural_verifier] Structural anomalies detected but GNN "
+                    f"p(trojan)={weighted_trojan_prob:.4f} <= 0.4 — keeping UNCERTAIN",
+                )
 
         return ClassificationResult(
             verdict=verdict,
