@@ -141,13 +141,117 @@ class DetectionPipeline:
             "history": history.to_dict(),
         }
 
+    def run_directory(
+        self,
+        input_path: Path,
+        output_dir: Path | None = None,
+        export_formats: list[str] | None = None,
+        selected_models: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Analyze all Verilog files in a directory as a single combined design.
+
+        All files are synthesized together into one netlist/graph so the GNN
+        sees the full design topology.  This matches how training data is
+        prepared (whole TjFree / TjIn folders) and produces much more accurate
+        graph-level verdicts than per-file analysis.
+
+        Args:
+            input_path: Directory containing Verilog files.
+            output_dir: Directory for report output.
+            export_formats: List of export formats.
+            selected_models: Model architectures to use.
+
+        Returns:
+            Single result dictionary for the combined design.
+        """
+        from backend.file_ingestion.collector import FileCollector
+        from backend.netlist_graph_builder.builder import NetlistGraphBuilder
+        from backend.netlist_synthesizer.synthesizer import NetlistSynthesizer
+        from backend.syntax_parser.parser import SyntaxParser
+        from backend.trojan_classifier.ensemble import EnsembleClassifier
+
+        if export_formats is None:
+            export_formats = ["json"]
+        if output_dir is None:
+            output_dir = Path(__file__).resolve().parent.parent.parent / "reports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        history = History()
+        total_stages = len(self.STAGE_NAMES)
+
+        # Stage 1: File Ingestion — collect all Verilog files
+        self._report_progress("file_ingestion", 1, total_stages)
+        collector = FileCollector(history)
+        ingestion_outcome = collector.process(input_path)
+        if not ingestion_outcome.success:
+            return self._finalize(history, output_dir, export_formats)
+
+        # Filter out testbench files — they contain timing constructs
+        # (initial, #delay, @posedge) that Yosys cannot synthesize.
+        _TB_PREFIXES = ("test_", "tb_", "tb", "testbench")
+        all_paths = [
+            f.path for f in ingestion_outcome.data.files
+            if not f.path.stem.lower().startswith(_TB_PREFIXES)
+        ]
+        skipped = len(ingestion_outcome.data.files) - len(all_paths)
+        if skipped:
+            history.info(
+                "file_ingestion",
+                f"Skipped {skipped} testbench file(s) (unsynthesizable)",
+            )
+        if not all_paths:
+            history.error("file_ingestion", "No synthesizable Verilog files found in directory")
+            return self._finalize(history, output_dir, export_formats)
+
+        history.info(
+            "file_ingestion",
+            f"Combined design mode: {len(all_paths)} files from {input_path.name}",
+        )
+
+        # Stage 2: Syntax Parsing
+        self._report_progress("syntax_parser", 2, total_stages)
+        parser = SyntaxParser(history)
+        parse_outcome = parser.process(ingestion_outcome.data)
+
+        # Stage 3: Netlist Synthesis — synthesize ALL filtered files together.
+        # Always use process_paths so that testbenches are excluded even when
+        # the parser succeeds (parse_outcome may still contain testbench modules).
+        self._report_progress("netlist_synthesizer", 3, total_stages)
+        synthesizer = NetlistSynthesizer(history)
+        synth_outcome = synthesizer.process_paths(all_paths)
+        if not synth_outcome.success:
+            return self._finalize(history, output_dir, export_formats)
+
+        # Stage 4: Graph Building — one graph for the whole design
+        self._report_progress("netlist_graph_builder", 4, total_stages)
+        graph_builder = NetlistGraphBuilder(history)
+        graph_outcome = graph_builder.process(synth_outcome.data)
+        if not graph_outcome.success:
+            return self._finalize(history, output_dir, export_formats)
+
+        # Stage 5: Trojan Classification
+        self._report_progress("trojan_classifier", 5, total_stages)
+        classifier = EnsembleClassifier(
+            history, selected_models=selected_models,
+        )
+        classify_outcome = classifier.process(
+            graph_outcome.data,
+            parsed_modules=parse_outcome.data if parse_outcome.success else None,
+        )
+        if not classify_outcome.success:
+            return self._finalize(history, output_dir, export_formats)
+
+        # Stage 6: Analysis Summary
+        self._report_progress("analysis_summarizer", 6, total_stages)
+        return self._finalize(history, output_dir, export_formats)
+
     def run_batch(
         self,
         input_path: Path,
         output_dir: Path | None = None,
         export_formats: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Execute the pipeline on all files in a directory.
+        """Execute the pipeline on all files in a directory (one-per-file).
 
         Args:
             input_path: Directory containing Verilog files.
