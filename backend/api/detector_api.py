@@ -56,22 +56,59 @@ class DetectorAPI:
         dir_path: str | Path,
         output_dir: str | Path | None = None,
         export_formats: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
+        mode: str = "combined",
+        selected_models: list[str] | None = None,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
         """Analyze all Verilog files in a directory.
 
         Args:
             dir_path: Path to the directory.
             output_dir: Directory for report output.
             export_formats: List of export formats.
+            mode: Analysis mode:
+                - "combined": Synthesize all files as one design (default).
+                    Best for whole-design verdicts — matches training data.
+                - "per_file": Analyze each file independently.
+                - "both": Run combined design analysis AND per-file analysis.
+                    Returns dict with "design" and "per_file" keys.
+            selected_models: List of model architectures to use.
 
         Returns:
-            List of result dictionaries, one per file.
+            Result dict, list of dicts, or dict with both (depending on mode).
         """
-        return self._pipeline.run_batch(
-            input_path=Path(dir_path),
-            output_dir=Path(output_dir) if output_dir else None,
-            export_formats=export_formats,
-        )
+        out_dir = Path(output_dir) if output_dir else None
+
+        if mode == "combined":
+            return self._pipeline.run_directory(
+                input_path=Path(dir_path),
+                output_dir=out_dir,
+                export_formats=export_formats,
+                selected_models=selected_models,
+            )
+        elif mode == "per_file":
+            return self._pipeline.run_batch(
+                input_path=Path(dir_path),
+                output_dir=out_dir,
+                export_formats=export_formats,
+            )
+        elif mode == "both":
+            design_result = self._pipeline.run_directory(
+                input_path=Path(dir_path),
+                output_dir=out_dir,
+                export_formats=export_formats,
+                selected_models=selected_models,
+            )
+            per_file_results = self._pipeline.run_batch(
+                input_path=Path(dir_path),
+                output_dir=out_dir,
+                export_formats=export_formats,
+            )
+            return {
+                "design": design_result,
+                "per_file": per_file_results,
+            }
+        else:
+            raise ValueError(f"Unknown mode {mode!r}. Use 'combined', 'per_file', or 'both'.")
 
     def analyze_file_async(
         self,
