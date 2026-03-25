@@ -37,10 +37,12 @@ logger = logging.getLogger(__name__)
 BASELINE_PATH = Path(__file__).parent / "weights" / "structural_baseline.json"
 
 # z-score threshold: metrics deviating more than this are "anomalous".
-DEFAULT_Z_THRESHOLD = 2.0
+# Raised from 2.0 → 2.5 to reduce false positives on clean circuits with unusual structure.
+DEFAULT_Z_THRESHOLD = 2.5
 
 # Minimum number of anomalous metrics to call INFECTED.
-MIN_ANOMALIES_FOR_INFECTED = 3
+# Raised from 3 → 5 to reduce false positives on structurally unusual but clean circuits.
+MIN_ANOMALIES_FOR_INFECTED = 5
 
 # Gate type names matching the one-hot encoding in node_encoder.
 _GATE_TYPE_NAMES = [
