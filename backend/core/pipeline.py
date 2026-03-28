@@ -245,6 +245,107 @@ class DetectionPipeline:
         self._report_progress("analysis_summarizer", 6, total_stages)
         return self._finalize(history, output_dir, export_formats)
 
+    def run_file_list(
+        self,
+        file_paths: list[Path],
+        output_dir: Path | None = None,
+        export_formats: list[str] | None = None,
+        selected_models: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Analyze an explicit list of files as a single combined design.
+
+        Unlike run_directory, this takes a user-supplied list of paths rather
+        than discovering files from a directory.  Useful when the user has
+        selected a subset of files from different directories to analyze together.
+        """
+        from backend.netlist_graph_builder.builder import NetlistGraphBuilder
+        from backend.netlist_synthesizer.synthesizer import NetlistSynthesizer
+        from backend.syntax_parser.parser import SyntaxParser
+        from backend.trojan_classifier.ensemble import EnsembleClassifier
+
+        if export_formats is None:
+            export_formats = ["json"]
+        if output_dir is None:
+            output_dir = Path(__file__).resolve().parent.parent.parent / "reports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        history = History()
+        total_stages = len(self.STAGE_NAMES)
+
+        # Stage 1: File Ingestion — record provided files directly
+        self._report_progress("file_ingestion", 1, total_stages)
+        history.begin_stage("file_ingestion")
+        _TB_PREFIXES = ("test_", "tb_", "tb", "testbench")
+        synthesizable = [
+            p for p in file_paths
+            if p.is_file() and not p.stem.lower().startswith(_TB_PREFIXES)
+        ]
+        skipped = len(file_paths) - len(synthesizable)
+        if skipped:
+            history.info("file_ingestion", f"Skipped {skipped} testbench file(s)")
+        if not synthesizable:
+            history.error("file_ingestion", "No synthesizable Verilog files in selection")
+            history.end_stage("file_ingestion", status="failed")
+            return self._finalize(history, output_dir, export_formats)
+        history.record("file_ingestion", "file_paths", [str(p) for p in synthesizable])
+        history.record("file_ingestion", "total_files", len(synthesizable))
+        history.info("file_ingestion", f"Design mode: {len(synthesizable)} file(s) selected")
+        history.end_stage("file_ingestion", status="completed")
+
+        # Stage 2: Syntax Parsing
+        self._report_progress("syntax_parser", 2, total_stages)
+        from backend.file_ingestion.models import DirectoryManifest, FileEntry, FileType
+        entries = [
+            FileEntry(
+                path=p,
+                extension=p.suffix.lower(),
+                file_type=FileType.SYSTEMVERILOG if p.suffix.lower() == ".sv" else FileType.VERILOG,
+                size=p.stat().st_size,
+                checksum="",
+            )
+            for p in synthesizable
+        ]
+        # Use the common parent of all files as the root directory
+        root_dir = synthesizable[0].parent if synthesizable else Path(".")
+        manifest = DirectoryManifest(
+            files=entries,
+            root_directory=root_dir,
+            total_count=len(entries),
+            verilog_count=sum(1 for e in entries if e.file_type == FileType.VERILOG),
+            systemverilog_count=sum(1 for e in entries if e.file_type == FileType.SYSTEMVERILOG),
+            total_size=sum(e.size for e in entries),
+        )
+        parser = SyntaxParser(history)
+        parse_outcome = parser.process(manifest)
+
+        # Stage 3: Netlist Synthesis — all files together
+        self._report_progress("netlist_synthesizer", 3, total_stages)
+        synthesizer = NetlistSynthesizer(history)
+        synth_outcome = synthesizer.process_paths(synthesizable)
+        if not synth_outcome.success:
+            return self._finalize(history, output_dir, export_formats)
+
+        # Stage 4: Graph Building
+        self._report_progress("netlist_graph_builder", 4, total_stages)
+        graph_builder = NetlistGraphBuilder(history)
+        graph_outcome = graph_builder.process(synth_outcome.data)
+        if not graph_outcome.success:
+            return self._finalize(history, output_dir, export_formats)
+
+        # Stage 5: Trojan Classification
+        self._report_progress("trojan_classifier", 5, total_stages)
+        classifier = EnsembleClassifier(history, selected_models=selected_models)
+        classify_outcome = classifier.process(
+            graph_outcome.data,
+            parsed_modules=parse_outcome.data if parse_outcome.success else None,
+        )
+        if not classify_outcome.success:
+            return self._finalize(history, output_dir, export_formats)
+
+        # Stage 6: Analysis Summary
+        self._report_progress("analysis_summarizer", 6, total_stages)
+        return self._finalize(history, output_dir, export_formats)
+
     def run_batch(
         self,
         input_path: Path,
