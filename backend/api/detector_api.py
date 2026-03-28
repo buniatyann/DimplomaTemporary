@@ -147,6 +147,35 @@ class DetectorAPI:
         
         return thread
 
+    def analyze_files_as_design(
+        self,
+        file_paths: list[str | Path],
+        output_dir: str | Path | None = None,
+        export_formats: list[str] | None = None,
+        selected_models: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Analyze an explicit list of files as a single combined design.
+
+        All files are synthesized together into one netlist so the GNN sees
+        the full design topology (cross-module connections, shared wires).
+        Use this when multiple files together form one design.
+
+        Args:
+            file_paths: Explicit list of Verilog file paths.
+            output_dir: Directory for report output.
+            export_formats: List of export formats.
+            selected_models: Model architectures to use.
+
+        Returns:
+            Single result dictionary for the combined design.
+        """
+        return self._pipeline.run_file_list(
+            file_paths=[Path(p) for p in file_paths],
+            output_dir=Path(output_dir) if output_dir else None,
+            export_formats=export_formats,
+            selected_models=selected_models,
+        )
+
     def cancel(self) -> None:
         """Request cancellation of the current analysis."""
         self._cancel_event.set()
