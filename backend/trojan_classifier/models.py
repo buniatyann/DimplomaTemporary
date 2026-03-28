@@ -17,6 +17,69 @@ class TrojanVerdict(str, Enum):
     UNCERTAIN = "uncertain"
 
 
+class NodeAlgorithmicInfo(BaseModel):
+    """Per-node SCOAP and Cone of Influence metrics from algorithmic analysis."""
+
+    node_index: int
+    gate_name: str
+
+    # Raw SCOAP values (integer counts before normalization)
+    scoap_cc0_raw: int = Field(default=1, description="Raw CC0: cost to set node to 0")
+    scoap_cc1_raw: int = Field(default=1, description="Raw CC1: cost to set node to 1")
+    scoap_co_raw:  int = Field(default=0, description="Raw CO: observability cost")
+
+    # Normalized SCOAP scores in [0, 1]
+    scoap_cc0: float = Field(default=0.0, ge=0.0, le=1.0)
+    scoap_cc1: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="High = hard to activate = likely trojan trigger",
+    )
+    scoap_co: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="High = hard to observe at outputs = likely trojan payload",
+    )
+
+    # Cone of Influence
+    coi_input_count:  int       = Field(default=0, description="# primary inputs in backward CoI")
+    coi_output_count: int       = Field(default=0, description="# primary outputs in forward CoI")
+    coi_inputs:  list[str]      = Field(default_factory=list,
+                                        description="Primary input names that can activate this node")
+    coi_outputs: list[str]      = Field(default_factory=list,
+                                        description="Primary output names this node can drive")
+
+    # Subgraph isolation in [0, 1]; 1.0 = fully isolated
+    subgraph_isolation: float   = Field(default=0.0, ge=0.0, le=1.0)
+
+    # Combined algorithmic suspicion score in [0, 1]
+    algo_suspicion_score: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class AlgorithmicResult(BaseModel):
+    """Result of SCOAP + CoI algorithmic analysis of a circuit graph."""
+
+    node_info: dict[str, NodeAlgorithmicInfo] = Field(
+        default_factory=dict,
+        description="Per-gate algorithmic info, keyed by gate_name",
+    )
+
+    # Graph-level summary
+    graph_algo_score: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="Fraction of non-I/O nodes with high algorithmic suspicion",
+    )
+    high_cc1_nodes:         list[str] = Field(default_factory=list,
+                                               description="Top-5% CC1 nodes (hard to activate)")
+    high_co_nodes:          list[str] = Field(default_factory=list,
+                                               description="Top-5% CO nodes (hard to observe)")
+    isolated_nodes:         list[str] = Field(default_factory=list,
+                                               description="Nodes with subgraph_isolation > 0.7")
+    zero_coi_output_nodes:  list[str] = Field(default_factory=list,
+                                               description="Nodes that drive zero primary outputs")
+
+    analysis_node_count: int = 0
+    analysis_edge_count: int = 0
+
+
 class TrojanLocation(BaseModel):
     """Detailed location of identified trojan logic in source code.
 
@@ -43,11 +106,25 @@ class TrojanLocation(BaseModel):
     suspicion_score: float = Field(
         ge=0.0,
         le=1.0,
-        description="GNN-computed suspicion score"
+        description="Combined suspicion score (GNN + algorithmic)",
     )
     detection_method: str = Field(
         default="gnn_attribution",
-        description="How this node was identified (gnn_attribution, name_pattern, structural)"
+        description="How this node was identified (gnn_attribution, name_pattern, gnn+algorithmic, etc.)",
+    )
+
+    # Algorithmic analysis fields (populated when AlgorithmicAnalyzer runs)
+    scoap_cc1: float | None = Field(
+        default=None, description="Normalized CC1: high = hard to activate (trojan trigger pattern)",
+    )
+    scoap_co: float | None = Field(
+        default=None, description="Normalized CO: high = hard to observe (trojan payload pattern)",
+    )
+    coi_outputs: list[str] = Field(
+        default_factory=list, description="Primary outputs this node drives",
+    )
+    algo_suspicion_score: float | None = Field(
+        default=None, description="Combined algorithmic suspicion score",
     )
 
     model_config = {"arbitrary_types_allowed": True}
@@ -58,6 +135,7 @@ class TrojanLocation(BaseModel):
             return f"{self.source_file}:{self.line_number}"
         elif self.source_file:
             return self.source_file
+        
         return f"module:{self.module_name}"
 
 
@@ -116,7 +194,13 @@ class ClassificationResult(BaseModel):
         default=1.0,
         ge=0.0,
         le=1.0,
-        description="Agreement level across ensemble models (1.0 = unanimous)"
+        description="Agreement level across ensemble models (1.0 = unanimous)",
+    )
+
+    # Algorithmic analysis result (None if skipped)
+    algorithmic_result: AlgorithmicResult | None = Field(
+        default=None,
+        description="SCOAP + CoI analysis; None if algorithmic analysis was not run",
     )
 
     def get_top_suspicious(self, n: int = 10) -> list[TrojanLocation]:
@@ -134,6 +218,7 @@ class ClassificationResult(BaseModel):
             if loc.module_name not in by_module:
                 by_module[loc.module_name] = []
             by_module[loc.module_name].append(loc)
+    
         return by_module
 
     def get_locations_by_file(self) -> dict[str, list[TrojanLocation]]:
@@ -143,7 +228,9 @@ class ClassificationResult(BaseModel):
             file_key = loc.source_file or "unknown"
             if file_key not in by_file:
                 by_file[file_key] = []
+    
             by_file[file_key].append(loc)
+    
         return by_file
 
     def format_report(self) -> str:
@@ -160,6 +247,7 @@ class ClassificationResult(BaseModel):
             lines.append("Affected Modules:")
             for mod in self.trojan_modules:
                 lines.append(f"  - {mod}")
+    
             lines.append("")
 
         if self.trojan_locations:
