@@ -40,8 +40,9 @@ ARCHITECTURE_MAP = {
     "gin": GINClassifier,
 }
 
-# Threshold for considering a node suspicious (for location reporting)
-SUSPICION_THRESHOLD = 0.3
+# Threshold for considering a node suspicious (for location reporting).
+# With 2-class softmax a random node scores ~0.5; 0.6 requires a clear lean.
+SUSPICION_THRESHOLD = 0.6
 
 # Threshold percentage of trojan nodes to trigger high-risk alert
 HIGH_RISK_THRESHOLD = 5.0
