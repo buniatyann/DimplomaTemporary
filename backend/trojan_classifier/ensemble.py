@@ -53,7 +53,10 @@ DEFAULT_WEIGHTS: dict[str, float] = {
 DEFAULT_CASCADE_THRESHOLD = 0.92
 
 # Node-level suspicion threshold for location reporting.
-SUSPICION_THRESHOLD = 0.3
+# With 2-class softmax, a random node scores ~0.5; 0.3 is far too permissive
+# and causes near-universal false positives on large circuits.  0.6 requires
+# the model to lean clearly toward "trojan" before flagging a node.
+SUSPICION_THRESHOLD = 0.6
 
 # Percentage of trojan nodes to trigger high-risk alert.
 HIGH_RISK_THRESHOLD = 5.0
@@ -556,13 +559,10 @@ class EnsembleClassifier:
         Returns:
             (should_downgrade, reason) — True + explanation if likely FP.
         """
-        if trojan_percentage < 90.0:
-            return False, ""
-
         # ── Signal 1: Suspicion score variance ──
         # Real trojans produce a bimodal distribution (high scores for trojan
         # gates, low for the rest).  False positives produce uniformly similar
-        # scores because the localization can't differentiate anything.
+        # scores because the model cannot differentiate trojan from benign gates.
         scores = list(gate_scores.values())
         if len(scores) >= 2:
             mean_s = sum(scores) / len(scores)
@@ -572,14 +572,11 @@ class EnsembleClassifier:
 
         # ── Signal 2: Graph size ──
         # Larger circuits are far less likely to be 100% trojan.
-        # Use log-scaled size so the threshold adapts smoothly.
         size_factor = math.log2(max(total_nodes, 2))
 
         # ── Signal 3: Score concentration near threshold ──
-        # If most suspicious nodes barely exceed the suspicion threshold (0.3),
-        # the localization is not confident — scores are noise, not signal.
-        threshold = 0.3
-        margin = 0.15  # scores within [threshold, threshold + margin] are "weak"
+        threshold = SUSPICION_THRESHOLD
+        margin = 0.10  # scores within [threshold, threshold + margin] are "weak"
         weak_count = sum(
             1 for loc in trojan_locations
             if loc.suspicion_score < threshold + margin
@@ -588,30 +585,27 @@ class EnsembleClassifier:
 
         # ── Combined decision ──
         # For small circuits (< 8 nodes), don't downgrade — trojan-only
-        # modules like TSC.v can legitimately be entirely malicious.
+        # modules can legitimately be entirely malicious.
         if total_nodes < 8:
             return False, ""
 
-        # Low variance + high suspicious % + large circuit → likely FP
-        # The thresholds scale with graph size so small circuits are lenient.
-        variance_threshold = 0.005 * size_factor  # ~0.02 for 16 nodes, ~0.035 for 128
-        if (
-            trojan_percentage >= 95.0
-            and variance < variance_threshold
-            and total_nodes >= 15
-        ):
-            return True, (
-                f"{trojan_percentage:.1f}% of {total_nodes} nodes flagged with low "
-                f"score variance ({variance:.4f} < {variance_threshold:.4f}), "
-                f"indicating the model cannot differentiate trojan from benign gates."
-            )
+        # More than half the nodes flagged on a non-tiny circuit is almost
+        # always a false positive — real trojans are a small fraction.
+        if trojan_percentage >= 50.0 and total_nodes >= 20:
+            variance_threshold = 0.005 * size_factor
+            if variance < variance_threshold:
+                return True, (
+                    f"{trojan_percentage:.1f}% of {total_nodes} nodes flagged with low "
+                    f"score variance ({variance:.4f} < {variance_threshold:.4f}) — "
+                    f"model cannot differentiate trojan from benign gates."
+                )
 
-        # Nearly all scores are weak (barely above threshold)
-        if weak_ratio >= 0.85 and trojan_percentage >= 95.0 and total_nodes >= 15:
+        # High flagged % + weak scores → noise, not signal
+        if trojan_percentage >= 40.0 and weak_ratio >= 0.80 and total_nodes >= 15:
             return True, (
                 f"{trojan_percentage:.1f}% of {total_nodes} nodes flagged, but "
                 f"{weak_ratio:.0%} of suspicious scores are within {margin} of the "
-                f"threshold, indicating low localization confidence."
+                f"threshold — localization confidence too low."
             )
 
         return False, ""
