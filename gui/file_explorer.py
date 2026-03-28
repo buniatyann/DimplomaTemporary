@@ -159,35 +159,60 @@ class FileExplorer(QTreeView):
     # ------------------------------------------------------------------
     # Add folder (Directories section)
     # ------------------------------------------------------------------
-    def add_folder(self, folder_paths: list[str]) -> list[str]:
+    def add_folder(self, root_folder: str) -> list[str]:
+        """Add a folder to the Directories section.
+
+        The dropped folder becomes a top-level dir item.  Its subfolders and
+        files are nested recursively inside it, mirroring the real directory
+        tree.
+        """
+        root = Path(root_folder)
         added: list[str] = []
-        dirs: dict[str, list[str]] = {}
-        for p in folder_paths:
-            if p in self._all_paths:
-                continue
-            parent = str(Path(p).parent)
-            dirs.setdefault(parent, []).append(p)
-            added.append(p)
 
-        for dir_path, file_paths in sorted(dirs.items()):
-            if dir_path not in self._dir_items:
-                dir_item = _make_dir_item(dir_path)
-                self._dirs_header.appendRow([dir_item])
-                self._dir_items[dir_path] = dir_item
-            else:
-                dir_item = self._dir_items[dir_path]
+        root_key = str(root)
+        if root_key not in self._dir_items:
+            root_item = _make_dir_item(root_key)
+            self._dirs_header.appendRow([root_item])
+            self._dir_items[root_key] = root_item
+        else:
+            root_item = self._dir_items[root_key]
 
-            for fp in sorted(file_paths):
-                child = _make_file_item(fp, self._show_absolute, FileStatus.PENDING)
-                dir_item.appendRow([child])
-                self._dir_file_items[fp] = child
-                self._all_paths.add(fp)
-                self._state_mgr.set_file_status(fp, FileStatus.PENDING)
+        self._populate_dir_item(root_item, root, added)
 
         if added:
             self.files_added.emit(added)
             self.selection_changed.emit(len(self.checked_paths()) > 0)
         return added
+
+    def _populate_dir_item(
+        self, parent_item: QStandardItem, dir_path: Path, added: list[str]
+    ) -> None:
+        """Recursively add subfolders and files under *parent_item*."""
+        try:
+            entries = sorted(dir_path.iterdir(), key=lambda e: (e.is_file(), e.name.lower()))
+        except PermissionError:
+            return
+
+        for entry in entries:
+            if entry.is_dir():
+                sub_key = str(entry)
+                if sub_key not in self._dir_items:
+                    sub_item = _make_dir_item(sub_key)
+                    parent_item.appendRow([sub_item])
+                    self._dir_items[sub_key] = sub_item
+                else:
+                    sub_item = self._dir_items[sub_key]
+                self._populate_dir_item(sub_item, entry, added)
+            elif entry.is_file() and entry.suffix.lower() in _VERILOG_SUFFIXES:
+                fp = str(entry)
+                if fp in self._all_paths:
+                    continue
+                child = _make_file_item(fp, self._show_absolute, FileStatus.PENDING)
+                parent_item.appendRow([child])
+                self._dir_file_items[fp] = child
+                self._all_paths.add(fp)
+                self._state_mgr.set_file_status(fp, FileStatus.PENDING)
+                added.append(fp)
 
     # ------------------------------------------------------------------
     # Dialogs
@@ -204,12 +229,7 @@ class FileExplorer(QTreeView):
             self, "Select Folder", self._last_dir()
         )
         if folder:
-            paths = [
-                str(f)
-                for f in Path(folder).rglob("*")
-                if f.suffix.lower() in _VERILOG_SUFFIXES
-            ]
-            self.add_folder(sorted(paths))
+            self.add_folder(folder)
 
     # ------------------------------------------------------------------
     # Checked / all paths
@@ -291,21 +311,18 @@ class FileExplorer(QTreeView):
         if not mime.hasUrls():
             return
         single: list[str] = []
-        folder: list[str] = []
+        folders: list[str] = []
         for url in mime.urls():
             local = url.toLocalFile()
             p = Path(local)
             if p.is_file() and p.suffix.lower() in _VERILOG_SUFFIXES:
                 single.append(str(p))
             elif p.is_dir():
-                folder.extend(
-                    str(f) for f in p.rglob("*")
-                    if f.suffix.lower() in _VERILOG_SUFFIXES
-                )
+                folders.append(str(p))
         if single:
             self.add_files(sorted(single))
-        if folder:
-            self.add_folder(sorted(folder))
+        for folder in folders:
+            self.add_folder(folder)
         event.acceptProposedAction()
 
     # ------------------------------------------------------------------
