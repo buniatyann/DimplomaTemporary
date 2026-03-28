@@ -177,12 +177,14 @@ class StructuralVerifier:
 
             mean = baseline["mean"]
             std = baseline["std"]
+            n = baseline.get("n", 0)
 
-            if std > 1e-9:
+            if std > 1e-9 and n >= 5:
                 z = abs(value - mean) / std
             else:
-                # Zero std: flag if the value differs from the mean at all
-                z = 0.0 if abs(value - mean) < 1e-9 else self._z_threshold + 1.0
+                # Baseline from < 5 samples or zero variance — not enough data
+                # to make a meaningful comparison; skip this metric entirely.
+                continue
 
             status = "OK"
             if z > self._z_threshold:
