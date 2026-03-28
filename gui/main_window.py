@@ -20,7 +20,7 @@ from gui.file_explorer import FileExplorer
 from gui.tabbed_log_panel import TabbedLogPanel
 from gui.state import AppState, AppStateManager, FileStatus
 from gui.toolbar import Toolbar
-from gui.workers import DetectionWorker
+from gui.workers import DesignWorker, DetectionWorker
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class MainWindow(QMainWindow):
 
         self._config = GUIConfig.load()
         self._state_mgr = AppStateManager(self)
-        self._worker: DetectionWorker | None = None
+        self._worker: DetectionWorker | DesignWorker | None = None
         self._last_results: dict[str, dict[str, Any]] = {}
 
         # ── Load stylesheet ──
@@ -92,6 +92,7 @@ class MainWindow(QMainWindow):
         tb.upload_folder_clicked.connect(self._file_explorer.add_folder_dialog)
         tb.run_all_clicked.connect(self._start_detection_all)
         tb.run_detection_clicked.connect(self._start_detection)
+        tb.run_as_design_clicked.connect(self._start_detection_as_design)
         tb.stop_clicked.connect(self._stop_detection)
         tb.remove_checked_clicked.connect(self._remove_checked)
         tb.clear_log_clicked.connect(self._log_panel.clear)
@@ -166,6 +167,51 @@ class MainWindow(QMainWindow):
         self._worker.progress_updated.connect(self._on_progress)
         self._worker.all_completed.connect(self._on_all_completed)
         self._worker.start()
+
+    def _start_detection_as_design(self) -> None:
+        paths = self._file_explorer.checked_paths()
+        if not paths:
+            self._log_panel.log_warning("No checked files to analyse as design.")
+            return
+
+        for p in paths:
+            self._state_mgr.set_file_status(p, FileStatus.PROCESSING)
+
+        self._state_mgr.set_state(AppState.PROCESSING)
+        selected = self._toolbar.selected_models
+        model_desc = ", ".join(m.upper() for m in selected)
+        self._log_panel.log_info(
+            f"Analyzing {len(paths)} file(s) as a single design using {model_desc}..."
+        )
+
+        self._worker = DesignWorker(paths, selected_models=selected, parent=self)
+        self._worker.started_signal.connect(lambda: self._status_bar.showMessage("Analyzing design..."))
+        self._worker.completed.connect(self._on_design_completed)
+        self._worker.error.connect(self._on_design_error)
+        self._worker.finished.connect(lambda: self._state_mgr.set_state(AppState.IDLE))
+        self._worker.start()
+
+    def _on_design_completed(self, result: dict) -> None:
+        verdict = result.get("verdict", "N/A")
+        confidence = result.get("confidence", 0.0)
+        is_trojan = result.get("is_trojan", False)
+
+        status = FileStatus.INFECTED if is_trojan else FileStatus.CLEAN
+        for p in self._file_explorer.checked_paths():
+            self._state_mgr.set_file_status(p, status)
+
+        log_fn = self._log_panel.log_alert if is_trojan else self._log_panel.log_ok
+        log_fn(f"Design verdict: {verdict} (confidence {confidence:.1%})")
+
+        report_text = result.get("report_text", "")
+        if report_text:
+            self._log_panel.open_report("__design__", report_text)
+
+        self._status_bar.showMessage(f"Design: {verdict} ({confidence:.1%})")
+
+    def _on_design_error(self, error_msg: str) -> None:
+        self._log_panel.log_alert(f"Design analysis error: {error_msg}")
+        self._status_bar.showMessage("Design analysis failed")
 
     def _stop_detection(self) -> None:
         if self._worker:

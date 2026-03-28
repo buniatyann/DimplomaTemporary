@@ -12,6 +12,44 @@ from PySide6.QtCore import QThread, Signal
 logger = logging.getLogger(__name__)
 
 
+class DesignWorker(QThread):
+    """Analyzes a list of files as a single combined design (whole-design mode).
+
+    All files are synthesized together so cross-module connections are visible
+    to the GNN.  Emits a single completed/error signal for the whole design.
+    """
+
+    started_signal = Signal()
+    completed = Signal(object)   # result dict
+    error = Signal(str)
+
+    def __init__(
+        self,
+        file_paths: list[str],
+        selected_models: list[str] | None = None,
+        parent=None,  # noqa: ANN001
+    ) -> None:
+        super().__init__(parent)
+        self._file_paths = list(file_paths)
+        self._selected_models = selected_models
+
+    def run(self) -> None:
+        self.started_signal.emit()
+        try:
+            from backend.api.detector_api import DetectorAPI
+            api = DetectorAPI()
+            result = api.analyze_files_as_design(
+                self._file_paths,
+                export_formats=["text"],
+                selected_models=self._selected_models,
+            )
+            self.completed.emit(_extract_result(result))
+        except Exception as exc:
+            tb = traceback.format_exc()
+            logger.error("Design analysis failed:\n%s", tb)
+            self.error.emit(str(exc))
+
+
 class DetectionWorker(QThread):
     """Processes a list of files sequentially through the backend pipeline.
 

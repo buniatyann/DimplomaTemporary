@@ -252,7 +252,20 @@ class FileExplorer(QTreeView):
     # Remove checked items
     # ------------------------------------------------------------------
     def remove_checked(self) -> None:
-        """Remove all checked files (and empty dir nodes)."""
+        """Remove all checked files and their now-empty ancestor dir nodes."""
+        # Collect dir items that are fully checked — remove the whole subtree
+        dirs_to_remove: list[QStandardItem] = []
+        for dir_path, dir_item in list(self._dir_items.items()):
+            if dir_item.checkState() == Qt.CheckState.Checked:
+                # Only remove top-level checked dirs (children will be covered)
+                parent = dir_item.parent()
+                if parent is not None and parent.data(_ROLE_KIND) != "dir":
+                    dirs_to_remove.append(dir_item)
+
+        for dir_item in dirs_to_remove:
+            self._remove_dir_subtree(dir_item)
+
+        # Remove individually checked files that weren't already cleared above
         to_remove = self.checked_paths()
         for path in to_remove:
             # Files section
@@ -267,15 +280,51 @@ class FileExplorer(QTreeView):
                 dir_parent = dir_child.parent()
                 if dir_parent:
                     dir_parent.removeRow(dir_child.row())
-                    if dir_parent.rowCount() == 0:
-                        dp = dir_parent.data(_ROLE_PATH)
-                        self._dir_items.pop(dp, None)
-                        gp = dir_parent.parent() or self._model.invisibleRootItem()
-                        gp.removeRow(dir_parent.row())
 
             self._all_paths.discard(path)
             self._state_mgr.remove_file(path)
             self.file_removed.emit(path)
+
+        # Prune any dir nodes left empty after individual file removal
+        self._prune_empty_dirs(self._dirs_header)
+
+    def _remove_dir_subtree(self, dir_item: QStandardItem) -> None:
+        """Recursively remove all files and subdirs under *dir_item*, then remove it."""
+        for row in range(dir_item.rowCount()):
+            child = dir_item.child(row, 0)
+            if child is None:
+                continue
+            kind = child.data(_ROLE_KIND)
+            if kind == "dir":
+                self._remove_dir_subtree(child)
+            elif kind == "file":
+                fp = child.data(_ROLE_PATH)
+                self._dir_file_items.pop(fp, None)
+                self._all_paths.discard(fp)
+                self._state_mgr.remove_file(fp)
+                self.file_removed.emit(fp)
+
+        dp = dir_item.data(_ROLE_PATH)
+        self._dir_items.pop(dp, None)
+        parent = dir_item.parent() or self._model.invisibleRootItem()
+        parent.removeRow(dir_item.row())
+
+    def _prune_empty_dirs(self, parent_item: QStandardItem) -> None:
+        """Remove dir nodes that have no children, bottom-up."""
+        row = 0
+        while row < parent_item.rowCount():
+            child = parent_item.child(row, 0)
+            if child is None:
+                row += 1
+                continue
+            if child.data(_ROLE_KIND) == "dir":
+                self._prune_empty_dirs(child)
+                if child.rowCount() == 0:
+                    dp = child.data(_ROLE_PATH)
+                    self._dir_items.pop(dp, None)
+                    parent_item.removeRow(row)
+                    continue  # don't increment — next child shifts into this row
+            row += 1
 
     # ------------------------------------------------------------------
     # Absolute path toggle
@@ -394,14 +443,21 @@ class FileExplorer(QTreeView):
         if kind == "dir":
             state = item.checkState()
             self._model.itemChanged.disconnect(self._on_item_changed)
-            for row in range(item.rowCount()):
-                child = item.child(row, 0)
-                if child:
-                    child.setCheckState(state)
+            self._set_check_recursive(item, state)
             self._model.itemChanged.connect(self._on_item_changed)
         # Notify whether any files are now checked
         if kind in ("file", "dir"):
             self.selection_changed.emit(len(self.checked_paths()) > 0)
+
+    def _set_check_recursive(self, parent: QStandardItem, state: Qt.CheckState) -> None:
+        """Recursively apply *state* to all children of *parent*."""
+        for row in range(parent.rowCount()):
+            child = parent.child(row, 0)
+            if child is None:
+                continue
+            child.setCheckState(state)
+            if child.data(_ROLE_KIND) == "dir":
+                self._set_check_recursive(child, state)
 
     # ------------------------------------------------------------------
     # Double-click → emit file path

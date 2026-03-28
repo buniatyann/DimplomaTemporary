@@ -90,6 +90,7 @@ class Toolbar(QToolBar):
     upload_folder_clicked = Signal()
     run_all_clicked = Signal()             # run ALL files
     run_detection_clicked = Signal()       # run checked files only
+    run_as_design_clicked = Signal()       # run checked files as one combined design
     stop_clicked = Signal()
     remove_checked_clicked = Signal()      # remove checked files
     clear_log_clicked = Signal()
@@ -137,10 +138,21 @@ class Toolbar(QToolBar):
         # ── Run Selected (checked files only) ──
         self._run_selected = QAction("Run Selected", self)
         self._run_selected.setShortcut(QKeySequence("Ctrl+Shift+R"))
-        self._run_selected.setToolTip("Run detection on checked files (Ctrl+Shift+R)")
+        self._run_selected.setToolTip("Run detection on checked files independently (Ctrl+Shift+R)")
         self._run_selected.setEnabled(False)
         self._run_selected.triggered.connect(self.run_detection_clicked)
         self.addAction(self._run_selected)
+
+        # ── Run as Design (checked files as one combined design) ──
+        self._run_as_design = QAction("Run as Design", self)
+        self._run_as_design.setShortcut(QKeySequence("Ctrl+D"))
+        self._run_as_design.setToolTip(
+            "Analyze checked files together as one design — synthesizes all files "
+            "into a single netlist so cross-module connections are visible (Ctrl+D)"
+        )
+        self._run_as_design.setEnabled(False)
+        self._run_as_design.triggered.connect(self.run_as_design_clicked)
+        self.addAction(self._run_as_design)
 
         # ── Stop ──
         self._stop = QAction("Stop", self)
@@ -283,6 +295,7 @@ class Toolbar(QToolBar):
         """Toggle button enabled state during processing."""
         self._run_all.setEnabled(not processing)
         self._run_selected.setEnabled(not processing and self._has_checked)
+        self._run_as_design.setEnabled(not processing and self._has_checked)
         self._stop.setEnabled(processing)
         self._upload_file.setEnabled(not processing)
         self._upload_folder.setEnabled(not processing)
@@ -291,6 +304,8 @@ class Toolbar(QToolBar):
         self._model_button.setEnabled(not processing)
 
     def update_selection_state(self, has_checked: bool) -> None:
-        """Enable/disable 'Run Selected' based on whether any files are checked."""
+        """Enable/disable selection-dependent buttons based on checked files."""
         self._has_checked = has_checked
-        self._run_selected.setEnabled(has_checked and self._run_all.isEnabled())
+        idle = self._run_all.isEnabled()
+        self._run_selected.setEnabled(has_checked and idle)
+        self._run_as_design.setEnabled(has_checked and idle)
