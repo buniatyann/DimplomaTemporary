@@ -16,10 +16,12 @@ from backend.core.exceptions import ClassificationError
 from backend.core.history import History
 from backend.core.outcome import StageOutcome
 from backend.netlist_graph_builder.models import CircuitGraph
+from backend.trojan_classifier.algorithmic_analyzer import AlgorithmicAnalyzer
 from backend.trojan_classifier.architectures.gat import GATClassifier
 from backend.trojan_classifier.architectures.gcn import GCNClassifier
 from backend.trojan_classifier.architectures.gin import GINClassifier
 from backend.trojan_classifier.models import (
+    AlgorithmicResult,
     ClassificationResult,
     TrojanLocation,
     TrojanVerdict,
@@ -51,6 +53,14 @@ DEFAULT_WEIGHTS: dict[str, float] = {
 
 # Cascade: if the first model is this confident, skip the rest.
 DEFAULT_CASCADE_THRESHOLD = 0.92
+
+# Algorithmic analysis decision thresholds (graph_algo_score)
+ALGO_CONFIRMS_THRESHOLD  = 0.15   # >= this → algo confirms trojan
+ALGO_DISAGREES_THRESHOLD = 0.05   # <= this → algo disagrees (circuit looks clean)
+
+# Score fusion weights: combined_score = GNN_W * gnn + ALGO_W * algo
+GNN_SCORE_WEIGHT  = 0.6
+ALGO_SCORE_WEIGHT = 0.4
 
 # Node-level suspicion threshold for location reporting.
 # With 2-class softmax, a random node scores ~0.5; 0.3 is far too permissive
@@ -121,6 +131,9 @@ class EnsembleClassifier:
         self._structural_verifier = StructuralVerifier()
         self._structural_verifier.load_baseline()
 
+        # Algorithmic analyzer (SCOAP + CoI)
+        self._algorithmic_analyzer = AlgorithmicAnalyzer()
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -155,6 +168,7 @@ class EnsembleClassifier:
         except ClassificationError as e:
             self._history.error(STAGE, str(e), data=e.context)
             self._history.end_stage(STAGE, status="failed")
+           
             return StageOutcome.fail(str(e), stage_name=STAGE)
 
         try:
@@ -163,11 +177,13 @@ class EnsembleClassifier:
             msg = f"Ensemble classification failed: {e}"
             self._history.error(STAGE, msg)
             self._history.end_stage(STAGE, status="failed")
+           
             return StageOutcome.fail(msg, stage_name=STAGE)
 
         duration = time.time() - start
         self._record_history(result, duration)
         self._history.end_stage(STAGE, status="completed")
+        
         return StageOutcome.ok(result, stage_name=STAGE)
 
     # ------------------------------------------------------------------
@@ -230,6 +246,7 @@ class EnsembleClassifier:
             graph_logits, node_logits = model(data.x, data.edge_index, batch)
             graph_probs = F.softmax(graph_logits, dim=1)
             node_probs = F.softmax(node_logits, dim=1)
+        
         return graph_probs, node_probs
 
     def _classify_ensemble(self, circuit_graph: CircuitGraph) -> ClassificationResult:
@@ -281,11 +298,13 @@ class EnsembleClassifier:
                 "trojan_probability": round(tp, 6),
                 "confidence": round(max(tp, cp), 6),
             }
+        
             weighted_trojan_prob += w * tp
             total_weight += w
 
         if total_weight > 0:
             weighted_trojan_prob /= total_weight
+        
         ensemble_clean_prob = 1.0 - weighted_trojan_prob
         ensemble_confidence = max(weighted_trojan_prob, ensemble_clean_prob)
 
@@ -313,11 +332,33 @@ class EnsembleClassifier:
             w = self._model_weights.get(arch_name, 1.0 / len(models_run))
             combined_node_probs += w * model_node_probs[arch_name]
             total_nw += w
+        
         if total_nw > 0:
             combined_node_probs /= total_nw
 
-        gate_scores = self._extract_node_scores(circuit_graph, combined_node_probs)
-        trojan_locations = self._locate_trojans(circuit_graph, gate_scores)
+        gnn_gate_scores = self._extract_node_scores(circuit_graph, combined_node_probs)
+
+        # ── Algorithmic analysis (SCOAP + CoI) ──────────────────────────────
+        algo_result = self._run_algorithmic_analysis(circuit_graph)
+        self._history.info(
+            STAGE,
+            f"[algorithmic] graph_algo_score={algo_result.graph_algo_score:.4f}, "
+            f"zero_coi={len(algo_result.zero_coi_output_nodes)}, "
+            f"isolated={len(algo_result.isolated_nodes)}, "
+            f"high_cc1={len(algo_result.high_cc1_nodes)}",
+        )
+
+        # Merge GNN + algorithmic per-node scores
+        gate_scores = self._merge_node_scores(gnn_gate_scores, algo_result)
+
+        # Combined decision: may upgrade UNCERTAIN or downgrade INFECTED
+        verdict, algo_reason = self._apply_combined_decision_logic(
+            verdict, weighted_trojan_prob, algo_result,
+        )
+        if algo_reason:
+            self._history.info(STAGE, f"[algorithmic_decision] {algo_reason}")
+
+        trojan_locations = self._locate_trojans(circuit_graph, gate_scores, algo_result)
 
         total_nodes = len(gate_scores)
         suspicious_count = len(trojan_locations)
@@ -325,20 +366,18 @@ class EnsembleClassifier:
         high_risk = trojan_percentage >= self._risk_threshold
         trojan_modules = list({loc.module_name for loc in trojan_locations})
 
-        # Sanity check: use multiple signals to detect likely false positives.
+        # False-positive sanity check (unchanged)
         if verdict == TrojanVerdict.INFECTED:
             should_downgrade, reason = self._is_likely_false_positive(
                 total_nodes, suspicious_count, trojan_percentage,
                 trojan_locations, gate_scores, model_agreement,
             )
+            
             if should_downgrade:
                 verdict = TrojanVerdict.UNCERTAIN
                 self._history.warning(STAGE, f"Downgraded INFECTED -> UNCERTAIN: {reason}")
 
-        # Structural verification: advisory signal for UNCERTAIN verdicts.
-        # The structural verifier no longer blindly overrides — it only
-        # upgrades to INFECTED when the GNN already leans trojan (prob > 0.3),
-        # preventing false positives on structurally unusual but clean circuits.
+        # Structural verifier: last-resort for remaining UNCERTAIN verdicts
         if verdict == TrojanVerdict.UNCERTAIN and self._structural_verifier.has_baseline:
             sv_verdict, sv_reason = self._structural_verifier.verify(circuit_graph)
             self._history.info(STAGE, f"[structural_verifier] {sv_reason}")
@@ -352,7 +391,6 @@ class EnsembleClassifier:
             elif sv_verdict == TrojanVerdict.CLEAN:
                 verdict = TrojanVerdict.CLEAN
             else:
-                # Structural says INFECTED but GNN disagrees — stay UNCERTAIN
                 self._history.info(
                     STAGE,
                     f"[structural_verifier] Structural anomalies detected but GNN "
@@ -375,6 +413,7 @@ class EnsembleClassifier:
             ensemble_models_run=models_run,
             per_model_results=per_model_results,
             model_agreement=round(model_agreement, 4),
+            algorithmic_result=algo_result,
         )
 
     # ------------------------------------------------------------------
@@ -389,12 +428,94 @@ class EnsembleClassifier:
         for idx, score in enumerate(scores):
             gate_name = circuit_graph.node_to_gate.get(idx, f"node_{idx}")
             gate_scores[gate_name] = round(score, 6)
+
         return gate_scores
+
+    def _run_algorithmic_analysis(
+        self, circuit_graph: CircuitGraph,
+    ) -> AlgorithmicResult:
+        """Run SCOAP + CoI analysis; return empty result on failure."""
+        try:
+            return self._algorithmic_analyzer.analyze(circuit_graph)
+        except Exception as e:
+            self._history.warning(STAGE, f"[algorithmic] Analysis failed: {e}")
+            return AlgorithmicResult()
+
+    def _merge_node_scores(
+        self,
+        gnn_scores: dict[str, float],
+        algo_result: AlgorithmicResult,
+    ) -> dict[str, float]:
+        """Fuse GNN and algorithmic per-node scores: 0.6*gnn + 0.4*algo."""
+        merged: dict[str, float] = {}
+        for gate_name, gnn_score in gnn_scores.items():
+            info = algo_result.node_info.get(gate_name)
+            a_score = info.algo_suspicion_score if info is not None else 0.0
+            merged[gate_name] = round(
+                GNN_SCORE_WEIGHT * gnn_score + ALGO_SCORE_WEIGHT * a_score, 6,
+            )
+        
+        return merged
+
+    def _apply_combined_decision_logic(
+        self,
+        gnn_verdict: TrojanVerdict,
+        weighted_trojan_prob: float,
+        algo_result: AlgorithmicResult,
+    ) -> tuple[TrojanVerdict, str]:
+        """Apply combined GNN + algorithmic decision logic.
+
+        Decision matrix:
+            GNN=INFECTED + algo confirms  → INFECTED  (high confidence)
+            GNN=INFECTED + algo disagrees → UNCERTAIN (GNN likely confused)
+            GNN=CLEAN    + algo confirms  → UNCERTAIN (stealthy trojan possible)
+            GNN=CLEAN    + algo disagrees → CLEAN
+            GNN=UNCERTAIN + algo confirms + p>0.4 → INFECTED
+            GNN=UNCERTAIN + algo disagrees        → CLEAN
+            GNN=UNCERTAIN + neither               → UNCERTAIN
+        """
+        gas = algo_result.graph_algo_score
+        n   = algo_result.analysis_node_count
+        large_circuit = n >= 200
+        confirms_threshold = ALGO_CONFIRMS_THRESHOLD if not large_circuit else 0.60
+        algo_confirms  = gas >= confirms_threshold
+        algo_disagrees = gas <= ALGO_DISAGREES_THRESHOLD
+
+        if gnn_verdict == TrojanVerdict.INFECTED:
+            if algo_confirms:
+                return TrojanVerdict.INFECTED, (
+                    f"GNN=INFECTED confirmed by algo (gas={gas:.4f})"
+                )
+            elif algo_disagrees and not large_circuit:
+                return TrojanVerdict.UNCERTAIN, (
+                    f"GNN=INFECTED downgraded: algo disagrees (gas={gas:.4f})"
+                )
+            return TrojanVerdict.INFECTED, ""
+
+        elif gnn_verdict == TrojanVerdict.CLEAN:
+            if algo_confirms and not large_circuit:
+                return TrojanVerdict.UNCERTAIN, (
+                    f"GNN=CLEAN upgraded to UNCERTAIN: algo suspicious (gas={gas:.4f})"
+                )
+            return TrojanVerdict.CLEAN, ""
+
+        else:  # UNCERTAIN
+            if algo_confirms and weighted_trojan_prob > 0.4:
+                return TrojanVerdict.INFECTED, (
+                    f"GNN=UNCERTAIN resolved to INFECTED: algo confirms (gas={gas:.4f}) "
+                    f"+ p(trojan)={weighted_trojan_prob:.4f} > 0.4"
+                )
+            elif algo_disagrees:
+                return TrojanVerdict.CLEAN, (
+                    f"GNN=UNCERTAIN resolved to CLEAN: algo disagrees (gas={gas:.4f})"
+                )
+            return TrojanVerdict.UNCERTAIN, ""
 
     def _locate_trojans(
         self,
         circuit_graph: CircuitGraph,
         gate_scores: dict[str, float],
+        algo_result: AlgorithmicResult | None = None,
     ) -> list[TrojanLocation]:
         locations: list[TrojanLocation] = []
         module_lookup = self._build_module_lookup()
@@ -436,12 +557,31 @@ class EnsembleClassifier:
                                 module_name = mod.name
                             if gate_type == "unknown":
                                 gate_type = found_type
+        
                             break
 
             if self._matches_trojan_pattern(gate_name):
                 detection_method = "name_pattern"
             else:
                 detection_method = "gnn_ensemble"
+
+            # Enrich with algorithmic metadata
+            scoap_cc1_val: float | None = None
+            scoap_co_val:  float | None = None
+            coi_out_names: list[str] = []
+            algo_score_val: float | None = None
+
+            if algo_result is not None:
+                ainfo = algo_result.node_info.get(gate_name)
+                if ainfo is not None:
+                    scoap_cc1_val  = ainfo.scoap_cc1
+                    scoap_co_val   = ainfo.scoap_co
+                    coi_out_names  = ainfo.coi_outputs
+                    algo_score_val = ainfo.algo_suspicion_score
+                    if detection_method == "gnn_ensemble":
+                        detection_method = "gnn+algorithmic"
+                    elif detection_method == "name_pattern" and ainfo.algo_suspicion_score > 0.5:
+                        detection_method = "name_pattern+algorithmic"
 
             locations.append(
                 TrojanLocation(
@@ -453,6 +593,10 @@ class EnsembleClassifier:
                     line_number=line_number,
                     suspicion_score=score,
                     detection_method=detection_method,
+                    scoap_cc1=scoap_cc1_val,
+                    scoap_co=scoap_co_val,
+                    coi_outputs=coi_out_names,
+                    algo_suspicion_score=algo_score_val,
                 )
             )
 
@@ -470,6 +614,7 @@ class EnsembleClassifier:
     def _build_gate_lookup(self) -> dict[str, dict]:
         if not self._parsed_modules:
             return {}
+        
         lookup: dict[str, dict] = {}
         for module in self._parsed_modules:
             for gate in module.gates:
@@ -487,6 +632,7 @@ class EnsembleClassifier:
                         "gate_type": direction,
                         "line_number": port.line_number,
                     }
+        
             for wire in module.wires:
                 if wire.name not in lookup:
                     lookup[wire.name] = {
@@ -494,6 +640,7 @@ class EnsembleClassifier:
                         "gate_type": "wire",
                         "line_number": wire.line_number,
                     }
+        
         return lookup
 
     def _find_gate_line(
@@ -502,6 +649,7 @@ class EnsembleClassifier:
         """Search source file for gate_name, return (line_number, hdl_type) or None."""
         if not source_file.exists():
             return None
+        
         escaped = re.escape(gate_name)
         try:
             with open(source_file, "r", encoding="utf-8", errors="replace") as f:
@@ -525,6 +673,7 @@ class EnsembleClassifier:
                         return line_num, "assign"
         except Exception as e:
             logger.debug(f"Could not search {source_file}: {e}")
+        
         return None
 
     @staticmethod
@@ -534,6 +683,7 @@ class EnsembleClassifier:
             r"(?i)trigger", r"(?i)payload", r"(?i)^mal_",
             r"(?i)^ht_", r"(?i)backdoor", r"(?i)leak",
         ]
+        
         return any(re.search(p, name) for p in patterns)
 
     # ------------------------------------------------------------------
@@ -631,6 +781,14 @@ class EnsembleClassifier:
         self._history.record(STAGE, "ensemble_models_run", result.ensemble_models_run)
         self._history.record(STAGE, "per_model_results", result.per_model_results)
         self._history.record(STAGE, "model_agreement", result.model_agreement)
+
+        if result.algorithmic_result is not None:
+            ar = result.algorithmic_result
+            self._history.record(STAGE, "algo_graph_score", ar.graph_algo_score)
+            self._history.record(STAGE, "algo_zero_coi_count", len(ar.zero_coi_output_nodes))
+            self._history.record(STAGE, "algo_isolated_count", len(ar.isolated_nodes))
+            self._history.record(STAGE, "algo_high_cc1_count", len(ar.high_cc1_nodes))
+            self._history.record(STAGE, "algo_high_co_count", len(ar.high_co_nodes))
 
         if result.verdict == TrojanVerdict.INFECTED or result.high_risk:
             top_locations = result.get_top_suspicious(20)
