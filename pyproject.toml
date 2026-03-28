@@ -5,16 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "trojan-detector"
 version = "0.1.0"
-description = "Automated hardware trojan detection in gate-level netlists using Graph Neural Networks"
+description = "Automated hardware trojan detection in gate-level netlists using Graph Neural Networks and algorithmic SCOAP/CoI analysis"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "Narek"},
 ]
 dependencies = [
-    "pyverilog>=1.3.0",
-    "torch>=2.0.0",
-    "torch-geometric>=2.4.0",
+    "pyslang>=3.0.0",
+    "torch>=2.10.0",
+    "torch-geometric>=2.7.0",
     "pydantic>=2.0.0",
     "reportlab>=4.0.0",
     "xxhash>=3.0.0",
