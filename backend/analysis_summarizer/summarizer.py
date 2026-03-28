@@ -236,6 +236,25 @@ class AnalysisSummarizer:
                 "trojan_classifier", "model_agreement", 1.0
             )
 
+        # Algorithmic analysis summary
+        algo_graph_score = self._history.get_record("trojan_classifier", "algo_graph_score")
+        if algo_graph_score is not None:
+            results["algorithmic_result"] = {
+                "graph_algo_score": algo_graph_score,
+                "zero_coi_count": self._history.get_record(
+                    "trojan_classifier", "algo_zero_coi_count", 0
+                ),
+                "isolated_count": self._history.get_record(
+                    "trojan_classifier", "algo_isolated_count", 0
+                ),
+                "high_cc1_count": self._history.get_record(
+                    "trojan_classifier", "algo_high_cc1_count", 0
+                ),
+                "high_co_count": self._history.get_record(
+                    "trojan_classifier", "algo_high_co_count", 0
+                ),
+            }
+
         return results
 
     def _build_sections(self, report: AnalysisReport) -> list[ReportSection]:
