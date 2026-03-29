@@ -203,6 +203,16 @@ class ClassificationResult(BaseModel):
         description="SCOAP + CoI analysis; None if algorithmic analysis was not run",
     )
 
+    # Golden reference comparison fields
+    golden_diff_used: bool = Field(
+        default=False,
+        description="Whether a golden reference comparison was performed",
+    )
+    golden_diff_node_count: int = Field(
+        default=0,
+        description="Number of nodes found exclusively in the suspect design vs golden",
+    )
+
     def get_top_suspicious(self, n: int = 10) -> list[TrojanLocation]:
         """Get top N most suspicious locations sorted by score."""
         return sorted(
