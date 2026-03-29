@@ -44,6 +44,7 @@ class DetectionPipeline:
         output_dir: Path | None = None,
         export_formats: list[str] | None = None,
         selected_models: list[str] | None = None,
+        golden_path: Path | None = None,
     ) -> dict[str, Any]:
         """Execute the full detection pipeline on a single file or directory.
 
@@ -106,6 +107,28 @@ class DetectionPipeline:
         if not graph_outcome.success:
             return self._finalize(history, output_dir, export_formats)
 
+        # Stage 4b: Golden Diff (optional)
+        golden_diff_result = None
+        if golden_path is not None:
+            from backend.trojan_classifier.golden_stage import (
+                GoldenDiffStage,
+                collect_golden_paths,
+            )
+            history.record("golden_diff", "golden_path", str(golden_path))
+            golden_files = collect_golden_paths(golden_path)
+            if golden_files:
+                golden_stage = GoldenDiffStage()
+                golden_outcome = golden_stage.run(
+                    suspect_graph=graph_outcome.data,
+                    golden_paths=golden_files,
+                    history=history,
+                    parsed_modules=parse_outcome.data if parse_outcome.success else None,
+                )
+                if golden_outcome is not None and golden_outcome.success:
+                    golden_diff_result = golden_outcome.data
+            else:
+                history.warning("golden_diff", f"No synthesisable files found in {golden_path}")
+
         # Stage 5: Trojan Classification (ensemble: GCN → GIN → GAT cascade)
         self._report_progress("trojan_classifier", 5, total_stages)
         classifier = EnsembleClassifier(
@@ -114,6 +137,7 @@ class DetectionPipeline:
         classify_outcome = classifier.process(
             graph_outcome.data,
             parsed_modules=parse_outcome.data if parse_outcome.success else None,
+            golden_diff_result=golden_diff_result,
         )
         if not classify_outcome.success:
             return self._finalize(history, output_dir, export_formats)
@@ -147,6 +171,7 @@ class DetectionPipeline:
         output_dir: Path | None = None,
         export_formats: list[str] | None = None,
         selected_models: list[str] | None = None,
+        golden_path: Path | None = None,
     ) -> dict[str, Any]:
         """Analyze all Verilog files in a directory as a single combined design.
 
@@ -229,6 +254,28 @@ class DetectionPipeline:
         if not graph_outcome.success:
             return self._finalize(history, output_dir, export_formats)
 
+        # Stage 4b: Golden Diff (optional)
+        golden_diff_result = None
+        if golden_path is not None:
+            from backend.trojan_classifier.golden_stage import (
+                GoldenDiffStage,
+                collect_golden_paths,
+            )
+            history.record("golden_diff", "golden_path", str(golden_path))
+            golden_files = collect_golden_paths(golden_path)
+            if golden_files:
+                golden_stage = GoldenDiffStage()
+                golden_outcome = golden_stage.run(
+                    suspect_graph=graph_outcome.data,
+                    golden_paths=golden_files,
+                    history=history,
+                    parsed_modules=parse_outcome.data if parse_outcome.success else None,
+                )
+                if golden_outcome is not None and golden_outcome.success:
+                    golden_diff_result = golden_outcome.data
+            else:
+                history.warning("golden_diff", f"No synthesisable files found in {golden_path}")
+
         # Stage 5: Trojan Classification
         self._report_progress("trojan_classifier", 5, total_stages)
         classifier = EnsembleClassifier(
@@ -237,6 +284,7 @@ class DetectionPipeline:
         classify_outcome = classifier.process(
             graph_outcome.data,
             parsed_modules=parse_outcome.data if parse_outcome.success else None,
+            golden_diff_result=golden_diff_result,
         )
         if not classify_outcome.success:
             return self._finalize(history, output_dir, export_formats)
@@ -251,6 +299,7 @@ class DetectionPipeline:
         output_dir: Path | None = None,
         export_formats: list[str] | None = None,
         selected_models: list[str] | None = None,
+        golden_path: Path | None = None,
     ) -> dict[str, Any]:
         """Analyze an explicit list of files as a single combined design.
 
@@ -332,12 +381,35 @@ class DetectionPipeline:
         if not graph_outcome.success:
             return self._finalize(history, output_dir, export_formats)
 
+        # Stage 4b: Golden Diff (optional)
+        golden_diff_result = None
+        if golden_path is not None:
+            from backend.trojan_classifier.golden_stage import (
+                GoldenDiffStage,
+                collect_golden_paths,
+            )
+            history.record("golden_diff", "golden_path", str(golden_path))
+            golden_files = collect_golden_paths(golden_path)
+            if golden_files:
+                golden_stage = GoldenDiffStage()
+                golden_outcome = golden_stage.run(
+                    suspect_graph=graph_outcome.data,
+                    golden_paths=golden_files,
+                    history=history,
+                    parsed_modules=parse_outcome.data if parse_outcome.success else None,
+                )
+                if golden_outcome is not None and golden_outcome.success:
+                    golden_diff_result = golden_outcome.data
+            else:
+                history.warning("golden_diff", f"No synthesisable files found in {golden_path}")
+
         # Stage 5: Trojan Classification
         self._report_progress("trojan_classifier", 5, total_stages)
         classifier = EnsembleClassifier(history, selected_models=selected_models)
         classify_outcome = classifier.process(
             graph_outcome.data,
             parsed_modules=parse_outcome.data if parse_outcome.success else None,
+            golden_diff_result=golden_diff_result,
         )
         if not classify_outcome.success:
             return self._finalize(history, output_dir, export_formats)
