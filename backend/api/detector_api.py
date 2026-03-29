@@ -31,6 +31,7 @@ class DetectorAPI:
         output_dir: str | Path | None = None,
         export_formats: list[str] | None = None,
         selected_models: list[str] | None = None,
+        golden_path: str | Path | None = None,
     ) -> dict[str, Any]:
         """Analyze a single Verilog file.
 
@@ -49,6 +50,7 @@ class DetectorAPI:
             output_dir=Path(output_dir) if output_dir else None,
             export_formats=export_formats,
             selected_models=selected_models,
+            golden_path=Path(golden_path) if golden_path else None,
         )
 
     def analyze_directory(
@@ -58,6 +60,7 @@ class DetectorAPI:
         export_formats: list[str] | None = None,
         mode: str = "combined",
         selected_models: list[str] | None = None,
+        golden_path: str | Path | None = None,
     ) -> dict[str, Any] | list[dict[str, Any]]:
         """Analyze all Verilog files in a directory.
 
@@ -78,12 +81,15 @@ class DetectorAPI:
         """
         out_dir = Path(output_dir) if output_dir else None
 
+        _golden = Path(golden_path) if golden_path else None
+
         if mode == "combined":
             return self._pipeline.run_directory(
                 input_path=Path(dir_path),
                 output_dir=out_dir,
                 export_formats=export_formats,
                 selected_models=selected_models,
+                golden_path=_golden,
             )
         elif mode == "per_file":
             return self._pipeline.run_batch(
@@ -97,6 +103,7 @@ class DetectorAPI:
                 output_dir=out_dir,
                 export_formats=export_formats,
                 selected_models=selected_models,
+                golden_path=_golden,
             )
             per_file_results = self._pipeline.run_batch(
                 input_path=Path(dir_path),
@@ -153,6 +160,7 @@ class DetectorAPI:
         output_dir: str | Path | None = None,
         export_formats: list[str] | None = None,
         selected_models: list[str] | None = None,
+        golden_path: str | Path | None = None,
     ) -> dict[str, Any]:
         """Analyze an explicit list of files as a single combined design.
 
@@ -174,6 +182,7 @@ class DetectorAPI:
             output_dir=Path(output_dir) if output_dir else None,
             export_formats=export_formats,
             selected_models=selected_models,
+            golden_path=Path(golden_path) if golden_path else None,
         )
 
     def cancel(self) -> None:
