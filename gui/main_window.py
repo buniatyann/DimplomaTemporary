@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from gui.config import GUIConfig
 from gui.file_explorer import FileExplorer
+from gui.reports_dir_dialog import ReportsDirDialog
 from gui.tabbed_log_panel import TabbedLogPanel
 from gui.state import AppState, AppStateManager, FileStatus
 from gui.toolbar import Toolbar
@@ -67,6 +68,10 @@ class MainWindow(QMainWindow):
         # ── Connect signals ──
         self._connect_signals()
 
+        # ── Reports directory ──
+        self._reports_dir: str = self._config.reports_directory
+        self._ask_reports_dir()
+
         self._log_panel.log_info("Hardware Trojan Detector ready.")
 
     # ------------------------------------------------------------------
@@ -80,6 +85,22 @@ class MainWindow(QMainWindow):
             logger.warning("Theme stylesheet not found at %s", qss_path)
         if hasattr(self, "_log_panel"):
             self._log_panel.set_theme(theme)
+
+    # ------------------------------------------------------------------
+    # Reports directory
+    # ------------------------------------------------------------------
+    def _ask_reports_dir(self) -> None:
+        """Show the reports-directory dialog on startup."""
+        dlg = ReportsDirDialog(last_reports_dir=self._reports_dir, parent=self)
+        if dlg.exec() == ReportsDirDialog.DialogCode.Accepted:
+            self._reports_dir = dlg.chosen_directory
+            self._config.reports_directory = self._reports_dir
+            self._config.save()
+            self._log_panel.log_info(f"Reports directory: {self._reports_dir}")
+        else:
+            # User cancelled — keep previous or fall back to cwd
+            if not self._reports_dir:
+                self._reports_dir = str(Path.cwd())
 
     # ------------------------------------------------------------------
     # Signal wiring
@@ -262,8 +283,9 @@ class MainWindow(QMainWindow):
             stem = Path(path).stem
             fmt = self._toolbar.export_format
             ext = {"json": ".json", "text": ".txt", "pdf": ".pdf"}.get(fmt, ".json")
+            reports_dir = self._reports_dir or str(Path.cwd())
             self._file_explorer.set_report_path(
-                path, f"{stem}_report{ext}"
+                path, str(Path(reports_dir) / f"{stem}_report{ext}")
             )
 
     def _on_file_error(self, path: str, error_msg: str) -> None:
@@ -328,7 +350,9 @@ class MainWindow(QMainWindow):
             self._log_panel.log_warning("No results to export. Run detection first.")
             return
 
-        folder = QFileDialog.getExistingDirectory(self, "Export Directory")
+        folder = QFileDialog.getExistingDirectory(
+            self, "Export Directory", self._reports_dir or str(Path.cwd())
+        )
         if not folder:
             return
 
