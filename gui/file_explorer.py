@@ -25,6 +25,7 @@ from PySide6.QtGui import (
     QAction,
     QBrush,
     QColor,
+    QCursor,
     QDragEnterEvent,
     QDropEvent,
     QFont,
@@ -92,6 +93,12 @@ class FileExplorer(QTreeView):
     file_removed = Signal(str)
     selection_changed = Signal(bool)    # True if any file is checked
     file_double_clicked = Signal(str)   # path — emitted on double-click of a file item
+    dir_double_clicked = Signal(str)    # dir path — emitted on double-click of a dir item
+    run_file_requested = Signal(str)         # run single file
+    remove_file_requested = Signal(str)      # remove single file
+    run_dir_requested = Signal(str)          # run all files in dir as design
+    remove_dir_requested = Signal(str)       # remove dir
+    golden_compare_requested = Signal(str)   # golden comparison for dir
 
     def __init__(self, state_mgr: AppStateManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -107,6 +114,7 @@ class FileExplorer(QTreeView):
         self.setEditTriggers(self.EditTrigger.NoEditTriggers)
         self.setRootIsDecorated(True)
         self.setIndentation(20)
+        self.setExpandsOnDoubleClick(False)
 
         # Drag-drop
         self.setAcceptDrops(True)
@@ -326,6 +334,29 @@ class FileExplorer(QTreeView):
                     continue  # don't increment — next child shifts into this row
             row += 1
 
+    def remove_path(self, path: str) -> None:
+        """Remove a specific file or directory subtree directly (no check-state dependency)."""
+        p = Path(path)
+        if p.is_dir():
+            dir_item = self._dir_items.get(path)
+            if dir_item:
+                self._remove_dir_subtree(dir_item)
+        else:
+            item = self._file_items.pop(path, None)
+            if item is not None:
+                parent = item.parent() or self._model.invisibleRootItem()
+                parent.removeRow(item.row())
+            dir_child = self._dir_file_items.pop(path, None)
+            if dir_child is not None:
+                dir_parent = dir_child.parent()
+                if dir_parent:
+                    dir_parent.removeRow(dir_child.row())
+            self._all_paths.discard(path)
+            self._state_mgr.remove_file(path)
+            self.file_removed.emit(path)
+        self._prune_empty_dirs(self._dirs_header)
+        self.selection_changed.emit(len(self.checked_paths()) > 0)
+
     # ------------------------------------------------------------------
     # Absolute path toggle
     # ------------------------------------------------------------------
@@ -380,10 +411,18 @@ class FileExplorer(QTreeView):
     def _show_context_menu(self, pos) -> None:  # noqa: ANN001
         menu = QMenu(self)
 
-        # Path copy actions (only for file/dir items)
         idx = self.indexAt(pos)
         item = self._model.itemFromIndex(idx) if idx.isValid() else None
-        if item and item.data(_ROLE_KIND) in ("file", "dir"):
+        kind = item.data(_ROLE_KIND) if item else None
+        path = item.data(_ROLE_PATH) if item else None
+
+        if kind == "file" and path:
+            run_act = QAction(f"Run: {Path(path).name}", self)
+            run_act.triggered.connect(lambda: self.run_file_requested.emit(path))
+            menu.addAction(run_act)
+
+            menu.addSeparator()
+
             copy_full = QAction("Copy Full Path", self)
             copy_full.triggered.connect(lambda: self._copy_path(item, relative=False))
             menu.addAction(copy_full)
@@ -394,9 +433,40 @@ class FileExplorer(QTreeView):
 
             menu.addSeparator()
 
-        remove_act = QAction("Remove Checked", self)
-        remove_act.triggered.connect(self.remove_checked)
-        menu.addAction(remove_act)
+            remove_act = QAction("Remove", self)
+            remove_act.triggered.connect(lambda: self.remove_file_requested.emit(path))
+            menu.addAction(remove_act)
+
+        elif kind == "dir" and path:
+            run_act = QAction(f"Run: {Path(path).name}/", self)
+            run_act.triggered.connect(lambda: self.run_dir_requested.emit(path))
+            menu.addAction(run_act)
+
+            golden_act = QAction("Compare with Golden…", self)
+            golden_act.triggered.connect(lambda: self.golden_compare_requested.emit(path))
+            menu.addAction(golden_act)
+
+            menu.addSeparator()
+
+            copy_full = QAction("Copy Full Path", self)
+            copy_full.triggered.connect(lambda: self._copy_path(item, relative=False))
+            menu.addAction(copy_full)
+
+            copy_rel = QAction("Copy Relative Path", self)
+            copy_rel.triggered.connect(lambda: self._copy_path(item, relative=True))
+            menu.addAction(copy_rel)
+
+            menu.addSeparator()
+
+            remove_act = QAction("Remove", self)
+            remove_act.triggered.connect(lambda: self.remove_dir_requested.emit(path))
+            menu.addAction(remove_act)
+
+        else:
+            # Clicked on empty area or section header — show generic actions
+            remove_checked_act = QAction("Remove Checked", self)
+            remove_checked_act.triggered.connect(self.remove_checked)
+            menu.addAction(remove_checked_act)
 
         open_folder_act = QAction("Open Containing Folder", self)
         open_folder_act.triggered.connect(self._open_containing_folder)
@@ -466,11 +536,21 @@ class FileExplorer(QTreeView):
         item = self._model.itemFromIndex(index)
         if item is None:
             return
-        if item.data(_ROLE_KIND) != "file":
-            return
+        kind = item.data(_ROLE_KIND)
         path = item.data(_ROLE_PATH)
-        if path:
+        if not path:
+            return
+
+        if kind == "file":
             self.file_double_clicked.emit(path)
+
+        elif kind == "dir":
+            # Toggle expand/collapse manually
+            if self.isExpanded(index):
+                self.collapse(index)
+            else:
+                self.expand(index)
+            self.dir_double_clicked.emit(path)
 
     # ------------------------------------------------------------------
     # Internal
