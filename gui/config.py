@@ -23,6 +23,7 @@ class GUIConfig:
     auto_scroll: bool = True
     max_log_lines: int = 10_000
     last_directory: str = ""
+    reports_directory: str = ""
 
     # ------------------------------------------------------------------
     # Persistence
