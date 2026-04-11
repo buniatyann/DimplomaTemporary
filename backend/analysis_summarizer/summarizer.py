@@ -236,14 +236,6 @@ class AnalysisSummarizer:
                 "trojan_classifier", "model_agreement", 1.0
             )
 
-        # Golden diff fields
-        if self._history.get_record("trojan_classifier", "golden_diff_used", False):
-            results["golden_diff_used"] = True
-            results["golden_diff_node_count"] = self._history.get_record(
-                "trojan_classifier", "golden_diff_node_count", 0
-            )
-            results["golden_path"] = self._history.get_record("golden_diff", "golden_path")
-
         # Algorithmic analysis summary
         algo_graph_score = self._history.get_record("trojan_classifier", "algo_graph_score")
         if algo_graph_score is not None:
