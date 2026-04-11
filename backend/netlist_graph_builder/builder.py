@@ -57,14 +57,23 @@ def _normalize_yosys_type(raw_type: str) -> str:
     # Strip $ and _ prefixes/suffixes for matching
     stripped = raw_type.lstrip("$").strip("_").upper()
     # Common prefixes: DFF_X1, AND2_X1, NAND3, LEDA 250nm cells (nnd2s1, hi1s1), etc.
-    for prefix in ("DFF", "AND", "NAND", "NND", "OR", "NOR", "XOR", "XNOR",
-                    "NOT", "BUF", "INV", "HI1", "MUX", "LATCH"):
+    # SDFF/SDFFE/SDFFCE are Yosys synchronous DFF variants with set/reset/enable.
+    # ADFF/ADFFE/ALDFF are async DFF variants.  DLATCH/ADLATCH are latches.
+    # MEM* cells (MEMINIT, MEMRD, MEMWR) are memory primitives → sequential.
+    for prefix, canonical in (
+        ("SDFFCE", "DFF"), ("SDFFE", "DFF"), ("SDFF", "DFF"),
+        ("ADFFE", "DFF"), ("ADFF", "DFF"), ("ALDFF", "DFF"),
+        ("DFFE", "DFF"), ("DFF", "DFF"),
+        ("ADLATCH", "LATCH"), ("DLATCH", "LATCH"), ("LATCH", "LATCH"),
+        ("MEMRD", "DFF"), ("MEMWR", "DFF"), ("MEMINIT", "DFF"),
+        ("AND", "AND"), ("NAND", "NAND"), ("NND", "NAND"),
+        ("NOR", "NOR"), ("OR", "OR"),
+        ("XNOR", "XNOR"), ("XOR", "XOR"),
+        ("NOT", "NOT"), ("INV", "NOT"), ("HI1", "NOT"),
+        ("BUF", "BUF"), ("MUX", "MUX"),
+    ):
         if stripped.startswith(prefix):
-            if prefix in ("INV", "HI1"):
-                return "NOT"
-            if prefix == "NND":
-                return "NAND"
-            return prefix
+            return canonical
 
     return stripped if stripped else "UNKNOWN"
 
