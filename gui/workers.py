@@ -27,13 +27,11 @@ class DesignWorker(QThread):
         self,
         file_paths: list[str],
         selected_models: list[str] | None = None,
-        golden_path: str | None = None,
         parent=None,  # noqa: ANN001
     ) -> None:
         super().__init__(parent)
         self._file_paths = list(file_paths)
         self._selected_models = selected_models
-        self._golden_path = golden_path
 
     def run(self) -> None:
         self.started_signal.emit()
@@ -44,7 +42,6 @@ class DesignWorker(QThread):
                 self._file_paths,
                 export_formats=["text"],
                 selected_models=self._selected_models,
-                golden_path=self._golden_path,
             )
             self.completed.emit(_extract_result(result))
         except Exception as exc:
@@ -69,13 +66,11 @@ class DetectionWorker(QThread):
         self,
         file_paths: list[str],
         selected_models: list[str] | None = None,
-        golden_path: str | None = None,
         parent=None,  # noqa: ANN001
     ) -> None:
         super().__init__(parent)
         self._file_paths = list(file_paths)
         self._selected_models = selected_models
-        self._golden_path = golden_path
         self._cancelled = False
 
     # ------------------------------------------------------------------
@@ -97,7 +92,7 @@ class DetectionWorker(QThread):
             self.progress_updated.emit(idx, total)
 
             try:
-                result = self._analyse_file(path, self._selected_models, self._golden_path)
+                result = self._analyse_file(path, self._selected_models)
                 self.file_completed.emit(path, result)
             except Exception as exc:
                 tb = traceback.format_exc()
@@ -113,7 +108,6 @@ class DetectionWorker(QThread):
     def _analyse_file(
         path: str,
         selected_models: list[str] | None = None,
-        golden_path: str | None = None,
     ) -> dict[str, Any]:
         """Run the backend pipeline on a single file.
 
@@ -128,7 +122,6 @@ class DetectionWorker(QThread):
                 path,
                 export_formats=["text"],
                 selected_models=selected_models,
-                golden_path=golden_path,
             )
             return _extract_result(result)
         except Exception:

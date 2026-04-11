@@ -8,17 +8,10 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
     QFileDialog,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
     QMainWindow,
-    QPushButton,
     QSplitter,
     QStatusBar,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -137,103 +130,12 @@ class MainWindow(QMainWindow):
         self._file_explorer.remove_file_requested.connect(self._on_remove_single)
         self._file_explorer.run_dir_requested.connect(self._on_run_dir)
         self._file_explorer.remove_dir_requested.connect(self._on_remove_single)
-        self._file_explorer.golden_compare_requested.connect(self._on_dir_double_clicked)
-
         # App state → toolbar
         self._state_mgr.state_changed.connect(self._on_state_changed)
 
     # ------------------------------------------------------------------
     # File events
     # ------------------------------------------------------------------
-    def _on_dir_double_clicked(self, dir_path: str) -> None:
-        """Double-clicking a folder offers golden-reference comparison."""
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Compare with Golden Reference")
-        dlg.setMinimumWidth(500)
-
-        layout = QVBoxLayout(dlg)
-        layout.addWidget(QLabel(
-            f"<b>Folder:</b> {Path(dir_path).name}<br><br>"
-            "Select a <b>trojan-free golden</b> version to compare against.<br>"
-            "The graph diff will be used as the primary verdict."
-        ))
-
-        path_row = QHBoxLayout()
-        path_edit = QLineEdit()
-        path_edit.setPlaceholderText("Select golden file or directory…")
-        path_edit.setReadOnly(True)
-        browse_btn = QPushButton("Browse…")
-
-        def _browse() -> None:
-            # Try file first
-            p, _ = QFileDialog.getOpenFileName(
-                dlg, "Select Golden File", str(Path(dir_path).parent),
-                "Verilog Files (*.v *.sv);;All Files (*)",
-            )
-            if not p:
-                p = QFileDialog.getExistingDirectory(
-                    dlg, "Select Golden Directory", str(Path(dir_path).parent),
-                )
-            if p:
-                path_edit.setText(p)
-
-        browse_btn.clicked.connect(_browse)
-        path_row.addWidget(path_edit)
-        path_row.addWidget(browse_btn)
-        layout.addLayout(path_row)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(dlg.accept)
-        buttons.rejected.connect(dlg.reject)
-        layout.addWidget(buttons)
-
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        golden_path = path_edit.text().strip()
-        if not golden_path:
-            self._log_panel.log_warning("No golden reference selected — analysis cancelled.")
-            return
-
-        # Collect all .v/.sv files from the suspect folder
-        suspect_files = [
-            str(p) for p in sorted(Path(dir_path).rglob("*.v"))
-            if not p.stem.lower().startswith(("test_", "tb_", "tb", "testbench"))
-        ] + [
-            str(p) for p in sorted(Path(dir_path).rglob("*.sv"))
-            if not p.stem.lower().startswith(("test_", "tb_", "tb", "testbench"))
-        ]
-
-        if not suspect_files:
-            self._log_panel.log_warning(f"No synthesisable Verilog files found in {Path(dir_path).name}.")
-            return
-
-        for p in suspect_files:
-            self._state_mgr.set_file_status(p, FileStatus.PROCESSING)
-
-        self._state_mgr.set_state(AppState.PROCESSING)
-        selected = self._toolbar.selected_models
-        self._log_panel.log_info(
-            f"Golden comparison: {Path(dir_path).name} vs {Path(golden_path).name} "
-            f"using {', '.join(m.upper() for m in selected)}…"
-        )
-
-        self._worker = DesignWorker(
-            suspect_files,
-            selected_models=selected,
-            golden_path=golden_path,
-            parent=self,
-        )
-        self._worker.started_signal.connect(
-            lambda: self._status_bar.showMessage("Running golden comparison…")
-        )
-        self._worker.completed.connect(self._on_design_completed)
-        self._worker.error.connect(self._on_design_error)
-        self._worker.finished.connect(lambda: self._state_mgr.set_state(AppState.IDLE))
-        self._worker.start()
-
     def _on_run_file(self, path: str) -> None:
         """Run detection on a single file (from double-click menu)."""
         self._run_detection([path])

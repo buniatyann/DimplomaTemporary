@@ -25,7 +25,6 @@ from PySide6.QtGui import (
     QAction,
     QBrush,
     QColor,
-    QCursor,
     QDragEnterEvent,
     QDropEvent,
     QFont,
@@ -98,8 +97,6 @@ class FileExplorer(QTreeView):
     remove_file_requested = Signal(str)      # remove single file
     run_dir_requested = Signal(str)          # run all files in dir as design
     remove_dir_requested = Signal(str)       # remove dir
-    golden_compare_requested = Signal(str)   # golden comparison for dir
-
     def __init__(self, state_mgr: AppStateManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._state_mgr = state_mgr
@@ -441,10 +438,6 @@ class FileExplorer(QTreeView):
             run_act = QAction(f"Run: {Path(path).name}/", self)
             run_act.triggered.connect(lambda: self.run_dir_requested.emit(path))
             menu.addAction(run_act)
-
-            golden_act = QAction("Compare with Golden…", self)
-            golden_act.triggered.connect(lambda: self.golden_compare_requested.emit(path))
-            menu.addAction(golden_act)
 
             menu.addSeparator()
 
