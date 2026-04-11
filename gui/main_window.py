@@ -25,6 +25,12 @@ from gui.workers import DesignWorker, DetectionWorker
 
 logger = logging.getLogger(__name__)
 
+_TB_PREFIXES = ("test_", "tb_", "tb", "testbench")
+
+
+def _is_testbench(path: str | Path) -> bool:
+    return Path(path).stem.lower().startswith(_TB_PREFIXES)
+
 
 class MainWindow(QMainWindow):
     """Top-level window: toolbar + splitter(file_explorer | log_viewer) + status bar."""
@@ -37,6 +43,7 @@ class MainWindow(QMainWindow):
         self._state_mgr = AppStateManager(self)
         self._worker: DetectionWorker | DesignWorker | None = None
         self._last_results: dict[str, dict[str, Any]] = {}
+        self._design_files: list[str] = []
 
         # ── Load stylesheet ──
         self._apply_stylesheet()
@@ -142,16 +149,23 @@ class MainWindow(QMainWindow):
 
     def _on_run_dir(self, dir_path: str) -> None:
         """Run detection on all files in a directory as a combined design."""
-        _TB = ("test_", "tb_", "tb", "testbench")
-        files = (
-            [str(p) for p in sorted(Path(dir_path).rglob("*.v")) if not p.stem.lower().startswith(_TB)]
-            + [str(p) for p in sorted(Path(dir_path).rglob("*.sv")) if not p.stem.lower().startswith(_TB)]
+        all_files = (
+            [str(p) for p in sorted(Path(dir_path).rglob("*.v"))]
+            + [str(p) for p in sorted(Path(dir_path).rglob("*.sv"))]
         )
+        files = [p for p in all_files if not _is_testbench(p)]
+        skipped_tb = [p for p in all_files if _is_testbench(p)]
         if not files:
             self._log_panel.log_warning(f"No synthesisable files in {Path(dir_path).name}.")
             return
         for p in files:
             self._state_mgr.set_file_status(p, FileStatus.PROCESSING)
+        for p in skipped_tb:
+            self._state_mgr.set_file_status(p, FileStatus.ERROR)
+            self._log_panel.log_warning(
+                f"{Path(p).name}: testbench excluded from design synthesis."
+            )
+        self._design_files = list(files)
         self._state_mgr.set_state(AppState.PROCESSING)
         selected = self._toolbar.selected_models
         self._log_panel.log_info(
@@ -231,14 +245,29 @@ class MainWindow(QMainWindow):
         self._worker.start()
 
     def _start_detection_as_design(self) -> None:
-        paths = self._file_explorer.checked_paths()
-        if not paths:
+        checked = self._file_explorer.checked_paths()
+        if not checked:
             self._log_panel.log_warning("No checked files to analyse as design.")
+            return
+
+        paths = [p for p in checked if not _is_testbench(p)]
+        skipped_tb = [p for p in checked if _is_testbench(p)]
+
+        if not paths:
+            self._log_panel.log_warning(
+                "All checked files are testbenches — nothing to synthesise as a design."
+            )
             return
 
         for p in paths:
             self._state_mgr.set_file_status(p, FileStatus.PROCESSING)
+        for p in skipped_tb:
+            self._state_mgr.set_file_status(p, FileStatus.ERROR)
+            self._log_panel.log_warning(
+                f"{Path(p).name}: testbench excluded from design synthesis."
+            )
 
+        self._design_files = list(paths)
         self._state_mgr.set_state(AppState.PROCESSING)
         selected = self._toolbar.selected_models
         model_desc = ", ".join(m.upper() for m in selected)
@@ -262,9 +291,31 @@ class MainWindow(QMainWindow):
         confidence = result.get("confidence", 0.0)
         is_trojan = result.get("is_trojan", False)
 
-        status = FileStatus.INFECTED if is_trojan else FileStatus.CLEAN
-        for p in self._file_explorer.checked_paths():
-            self._state_mgr.set_file_status(p, status)
+        # Per-file status: a file is only marked INFECTED if the classifier
+        # flagged at least one gate that maps back to it via a validated
+        # source_file. Everything else in the design is CLEAN.
+        infected_files: set[str] = set()
+        if is_trojan:
+            report = result.get("raw", {}).get("report", {})
+            cr = report.get("classification_results", {})
+            for gate in cr.get("top_suspicious_gates", []):
+                src = gate.get("file")
+                if not src:
+                    continue
+                try:
+                    infected_files.add(str(Path(src).resolve()))
+                except (OSError, ValueError):
+                    continue
+
+        for p in self._design_files:
+            try:
+                resolved = str(Path(p).resolve())
+            except (OSError, ValueError):
+                resolved = p
+            if resolved in infected_files:
+                self._state_mgr.set_file_status(p, FileStatus.INFECTED)
+            else:
+                self._state_mgr.set_file_status(p, FileStatus.CLEAN)
 
         log_fn = self._log_panel.log_alert if is_trojan else self._log_panel.log_ok
         log_fn(f"Design verdict: {verdict} (confidence {confidence:.1%})")
@@ -276,6 +327,8 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage(f"Design: {verdict} ({confidence:.1%})")
 
     def _on_design_error(self, error_msg: str) -> None:
+        for p in self._design_files:
+            self._state_mgr.set_file_status(p, FileStatus.ERROR)
         self._log_panel.log_alert(f"Design analysis error: {error_msg}")
         self._status_bar.showMessage("Design analysis failed")
 
