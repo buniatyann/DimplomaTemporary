@@ -6,6 +6,7 @@ import logging
 import math
 import time
 from collections import defaultdict, deque
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -43,6 +44,70 @@ _YOSYS_TYPE_MAP: dict[str, str] = {
     "$XOR": "XOR", "$XNOR": "XNOR",
     "$MUX": "MUX",
 }
+
+
+_HDL_SUFFIXES = frozenset({".v", ".sv", ".vh", ".svh"})
+
+
+def _parse_yosys_src(
+    src_attr: str | None,
+    temp_to_original: dict[str, str] | None,
+) -> tuple[str, int] | None:
+    """Extract (resolved_source_file, line_number) from a Yosys `src` attribute.
+
+    Yosys emits strings like "file.v:42.5-42.20" and may join multiple with
+    "|" when a gate maps to more than one source location. We take the first
+    entry, strip the column range, resolve the filename against the
+    temp-to-original map (when Yosys synthesised from copies in a temp dir),
+    and only return the result if it points at a real HDL file on disk.
+    """
+    if not src_attr or not isinstance(src_attr, str):
+        return None
+
+    first = src_attr.split("|", 1)[0].strip()
+    if not first:
+        return None
+
+    # Split filename and position — filename may contain drive letters on
+    # Windows, so we only split on the final ":" before the line.row format.
+    colon_idx = first.rfind(":")
+    if colon_idx <= 0:
+        return None
+
+    raw_path = first[:colon_idx]
+    position = first[colon_idx + 1:]
+
+    # Position is "line.col-line.col" or just "line"; grab the first integer.
+    line_str = position.split(".", 1)[0].split("-", 1)[0].strip()
+    try:
+        line_number = int(line_str)
+    except ValueError:
+        return None
+    if line_number <= 0:
+        return None
+
+    # Resolve the file path:
+    #   1. Direct hit in temp_to_original (as bare name or full temp path)
+    #   2. Basename hit in temp_to_original
+    #   3. Path as-is (for flows that read originals directly)
+    resolved: str | None = None
+    if temp_to_original:
+        if raw_path in temp_to_original:
+            resolved = temp_to_original[raw_path]
+        else:
+            base = Path(raw_path).name
+            if base in temp_to_original:
+                resolved = temp_to_original[base]
+    if resolved is None:
+        resolved = raw_path
+
+    p = Path(resolved)
+    if p.suffix.lower() not in _HDL_SUFFIXES:
+        return None
+    if not p.is_file():
+        return None
+
+    return str(p.resolve()), line_number
 
 
 def _normalize_yosys_type(raw_type: str) -> str:
@@ -108,7 +173,10 @@ class NetlistGraphBuilder:
         start = time.time()
 
         try:
-            graph = self._build_from_json(synthesis_result.json_netlist)
+            graph = self._build_from_json(
+                synthesis_result.json_netlist,
+                temp_to_original=synthesis_result.temp_to_original,
+            )
         except GraphBuildError as e:
             self._history.error(STAGE, str(e), data=e.context)
             self._history.end_stage(STAGE, status="failed")
@@ -148,7 +216,11 @@ class NetlistGraphBuilder:
         self._history.end_stage(STAGE, status="completed")
         return StageOutcome.ok(graph, stage_name=STAGE)
 
-    def _build_from_json(self, json_netlist: dict[str, Any]) -> CircuitGraph:
+    def _build_from_json(
+        self,
+        json_netlist: dict[str, Any],
+        temp_to_original: dict[str, str] | None = None,
+    ) -> CircuitGraph:
         """Construct a CircuitGraph from a Yosys JSON netlist."""
         modules = json_netlist.get("modules", {})
         if not modules:
@@ -168,6 +240,9 @@ class NetlistGraphBuilder:
         node_map: dict[str, int] = {}
         node_types: list[str] = []
         node_names: list[str] = []
+        # Map: node_idx -> (source_file, line_number) — only populated when
+        # Yosys emitted a `src` attribute that resolved to a real HDL file.
+        node_src_map: dict[int, tuple[str, int]] = {}
 
         # Add port nodes (primary inputs/outputs)
         for port_name, port_data in ports.items():
@@ -177,6 +252,12 @@ class NetlistGraphBuilder:
             canonical = "INPUT" if direction == "input" else "OUTPUT"
             node_types.append(canonical)
             node_names.append(port_name)
+            src_entry = _parse_yosys_src(
+                (port_data.get("attributes") or {}).get("src"),
+                temp_to_original,
+            )
+            if src_entry is not None:
+                node_src_map[idx] = src_entry
 
         # Add cell nodes
         for cell_name, cell_data in cells.items():
@@ -186,6 +267,12 @@ class NetlistGraphBuilder:
             cell_type = _normalize_yosys_type(cell_type)
             node_types.append(cell_type)
             node_names.append(cell_name)
+            src_entry = _parse_yosys_src(
+                (cell_data.get("attributes") or {}).get("src"),
+                temp_to_original,
+            )
+            if src_entry is not None:
+                node_src_map[idx] = src_entry
 
         # Build wire-to-node connectivity
         # Map: bit_id -> list of (node_name, direction)
@@ -275,6 +362,7 @@ class NetlistGraphBuilder:
         return CircuitGraph(
             graph_data=data,
             node_to_gate=node_to_gate,
+            node_src_map=node_src_map,
             module_name=module_name,
             node_features_info=features_info,
             node_count=len(node_map),

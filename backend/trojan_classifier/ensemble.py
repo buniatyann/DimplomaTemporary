@@ -35,6 +35,52 @@ logger = logging.getLogger(__name__)
 
 STAGE = "trojan_classifier"
 
+_HDL_SUFFIXES = frozenset({".v", ".sv", ".vh", ".svh"})
+
+
+def _validate_source_path(
+    path: str | None,
+    parsed_modules: "list[ParsedModule] | None",
+) -> str | None:
+    """Return `path` only if it's a real user-supplied HDL source file.
+
+    Filters out pyslang/Yosys internal paths (.cc, techlib cells, temp-dir
+    copies) by enforcing three constraints:
+      1. Suffix must be .v / .sv / .vh / .svh.
+      2. File must exist on disk.
+      3. When parsed_modules is available, the resolved path must match one
+         of the source files the parser actually consumed (allowlist).
+
+    This is the single choke point for TrojanLocation.source_file — every
+    resolved path goes through here before leaving the classifier.
+    """
+    if not path:
+        return None
+    try:
+        p = Path(path)
+    except (TypeError, ValueError):
+        return None
+    if p.suffix.lower() not in _HDL_SUFFIXES:
+        return None
+    if not p.is_file():
+        return None
+    if parsed_modules:
+        allowed: set[str] = set()
+        for mod in parsed_modules:
+            if mod.source_path:
+                try:
+                    allowed.add(str(Path(mod.source_path).resolve()))
+                except (OSError, ValueError):
+                    continue
+        if allowed:
+            try:
+                resolved = str(p.resolve())
+            except (OSError, ValueError):
+                return None
+            if resolved not in allowed:
+                return None
+    return str(p)
+
 WEIGHTS_DIR = Path(__file__).parent / "weights"
 
 ARCHITECTURE_MAP: dict[str, type[torch.nn.Module]] = {
@@ -543,35 +589,49 @@ class EnsembleClassifier:
             module_name = gate_info.get("module_name", "unknown")
             gate_type = gate_info.get("gate_type", "unknown")
 
-            source_file = None
-            line_number = gate_info.get("line_number")
-            module_info = module_lookup.get(module_name)
-            if module_info:
-                source_path = module_info.get("source_path")
-                if source_path:
-                    source_file = source_path
-                    # Fall back to regex search if parser didn't capture line number
-                    if line_number is None:
-                        result = self._find_gate_line(Path(source_path), gate_name)
-                        if result is not None:
-                            line_number, found_type = result
-                            if gate_type == "unknown":
-                                gate_type = found_type
+            # Primary source: Yosys `src` attribute resolved by the builder.
+            # This maps cells to the exact line in the user's source file
+            # (including cells that Yosys renamed during synthesis).
+            src_entry = circuit_graph.node_src_map.get(node_idx)
+            if src_entry is not None:
+                source_file, line_number = src_entry
+            else:
+                # Secondary: parsed-module lookup by gate instance name.
+                source_file = None
+                line_number = gate_info.get("line_number")
+                module_info = module_lookup.get(module_name)
+                if module_info:
+                    source_path = module_info.get("source_path")
+                    if source_path:
+                        source_file = source_path
+                        # Fall back to regex search if parser didn't capture line number
+                        if line_number is None:
+                            result = self._find_gate_line(Path(source_path), gate_name)
+                            if result is not None:
+                                line_number, found_type = result
+                                if gate_type == "unknown":
+                                    gate_type = found_type
 
-            # If gate_lookup missed, try regex search across all source files
-            if source_file is None and self._parsed_modules:
-                for mod in self._parsed_modules:
-                    if mod.source_path:
-                        result = self._find_gate_line(Path(mod.source_path), gate_name)
-                        if result is not None:
-                            line_number, found_type = result
-                            source_file = mod.source_path
-                            if module_name == "unknown":
-                                module_name = mod.name
-                            if gate_type == "unknown":
-                                gate_type = found_type
-        
-                            break
+                # Tertiary: regex scan across all parsed source files.
+                if source_file is None and self._parsed_modules:
+                    for mod in self._parsed_modules:
+                        if mod.source_path:
+                            result = self._find_gate_line(Path(mod.source_path), gate_name)
+                            if result is not None:
+                                line_number, found_type = result
+                                source_file = mod.source_path
+                                if module_name == "unknown":
+                                    module_name = mod.name
+                                if gate_type == "unknown":
+                                    gate_type = found_type
+                                break
+
+            # Validate: strip anything that isn't a real user HDL file on disk.
+            # This catches pyslang `.cc` leaks, techlib cells, and temp-dir
+            # copies that Yosys may emit in `src` attributes.
+            source_file = _validate_source_path(source_file, self._parsed_modules)
+            if source_file is None:
+                line_number = None
 
             if self._matches_trojan_pattern(gate_name):
                 detection_method = "name_pattern"

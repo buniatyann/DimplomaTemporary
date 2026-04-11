@@ -231,7 +231,7 @@ def _process_one_file(
     for method_name in ("preprocess", "synthesize"):
         try:
             method = getattr(yosys_runner, method_name)
-            json_netlist, _, _ = method([entry.path])
+            json_netlist, _, _, _ = method([entry.path])
             break
         except SynthesisError:
             if method_name == "synthesize":

@@ -79,7 +79,7 @@ class NetlistSynthesizer:
         )
 
         try:
-            json_netlist, stdout, stderr = self._runner.synthesize(source_paths)
+            json_netlist, stdout, stderr, temp_to_original = self._runner.synthesize(source_paths)
         except SynthesisError as e:
             self._history.error(STAGE, str(e), data=e.context)
             self._history.end_stage(STAGE, status="failed")
@@ -102,6 +102,7 @@ class NetlistSynthesizer:
             module_hierarchy=module_hierarchy,
             warnings=warnings,
             source_paths=[str(p) for p in source_paths],
+            temp_to_original=temp_to_original,
         )
 
         # Record in history

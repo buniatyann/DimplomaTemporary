@@ -24,6 +24,7 @@ class CircuitGraph(BaseModel):
 
     graph_data: Any = None
     node_to_gate: dict[int, str] = Field(default_factory=dict)
+    node_src_map: dict[int, tuple[str, int]] = Field(default_factory=dict)
     module_name: str = ""
     node_features_info: NodeFeatures | None = None
     node_count: int = 0

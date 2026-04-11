@@ -38,33 +38,39 @@ class YosysRunner:
     def is_available(self) -> bool:
         return self._yosys_path is not None
 
-    def elaborate(self, source_paths: list[Path]) -> tuple[dict, str, str]:
+    def elaborate(
+        self, source_paths: list[Path]
+    ) -> tuple[dict, str, str, dict[str, str]]:
         """Run elaboration-only flow on source files.
 
         Returns:
-            Tuple of (json_netlist_dict, stdout, stderr).
+            Tuple of (json_netlist_dict, stdout, stderr, temp_to_original).
         """
         return self._run_script("elaborate.ys", source_paths)
 
-    def synthesize(self, source_paths: list[Path]) -> tuple[dict, str, str]:
+    def synthesize(
+        self, source_paths: list[Path]
+    ) -> tuple[dict, str, str, dict[str, str]]:
         """Run full synthesis flow on source files.
 
         Returns:
-            Tuple of (json_netlist_dict, stdout, stderr).
+            Tuple of (json_netlist_dict, stdout, stderr, temp_to_original).
         """
         return self._run_script("synthesize.ys", source_paths)
 
-    def preprocess(self, source_paths: list[Path]) -> tuple[dict, str, str]:
+    def preprocess(
+        self, source_paths: list[Path]
+    ) -> tuple[dict, str, str, dict[str, str]]:
         """Run preprocessing flow (elaborate + flatten) for training data.
 
         Returns:
-            Tuple of (json_netlist_dict, stdout, stderr).
+            Tuple of (json_netlist_dict, stdout, stderr, temp_to_original).
         """
         return self._run_script("preprocess.ys", source_paths)
 
     def _run_script(
         self, script_name: str, source_paths: list[Path]
-    ) -> tuple[dict, str, str]:
+    ) -> tuple[dict, str, str, dict[str, str]]:
         """Execute a Yosys script template with the given source files."""
         if not self.is_available:
             raise SynthesisError(
@@ -84,6 +90,7 @@ class YosysRunner:
 
             # Copy source files to temp dir, applying compatibility fixes
             local_paths = []
+            temp_to_original: dict[str, str] = {}
             for i, p in enumerate(source_paths):
                 local_name = f"input_{i}_{Path(p).name}"
                 local_copy = tmpdir_path / local_name
@@ -92,6 +99,13 @@ class YosysRunner:
                 content = content.replace("trireg ", "wire    ")
                 local_copy.write_text(content, encoding="utf-8")
                 local_paths.append(local_name)
+                # Record both the bare local name and the absolute temp path
+                # so the builder can resolve Yosys `src` attributes regardless
+                # of how Yosys spells the path.
+                original_abs = str(Path(p).resolve())
+                temp_to_original[local_name] = original_abs
+                temp_to_original[str(local_copy)] = original_abs
+                temp_to_original[str(local_copy.resolve())] = original_abs
 
             read_commands = "\n".join(f"read_verilog {lp}" for lp in local_paths)
             script_content = template_content.replace("{{READ_FILES}}", read_commands)
@@ -145,4 +159,4 @@ class YosysRunner:
                         yosys_output=str(e),
                     ) from e
 
-            return json_netlist, stdout, stderr
+            return json_netlist, stdout, stderr, temp_to_original

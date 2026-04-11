@@ -30,3 +30,8 @@ class SynthesisResult(BaseModel):
     module_hierarchy: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     source_paths: list[str] = Field(default_factory=list)
+    # Maps the temp-dir file name Yosys saw (e.g. "input_0_aes_128.v") back to
+    # the absolute path of the original user source file. Populated by
+    # YosysRunner when it copies inputs into the temp workspace; used by the
+    # graph builder to resolve Yosys `src` attributes to user source files.
+    temp_to_original: dict[str, str] = Field(default_factory=dict)
