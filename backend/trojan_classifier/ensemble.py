@@ -146,7 +146,6 @@ class EnsembleClassifier:
         self,
         circuit_graph: CircuitGraph,
         parsed_modules: list[ParsedModule] | None = None,
-        golden_diff_result: ClassificationResult | None = None,
     ) -> StageOutcome[ClassificationResult]:
         """Run ensemble classification on a circuit graph.
 
@@ -179,72 +178,11 @@ class EnsembleClassifier:
             self._history.end_stage(STAGE, status="failed")
             return StageOutcome.fail(msg, stage_name=STAGE)
 
-        # If a golden diff was provided, merge it: diff verdict takes priority.
-        if golden_diff_result is not None:
-            result = self._merge_with_golden_diff(result, golden_diff_result)
-            self._history.info(
-                STAGE,
-                f"[golden_diff] Merged: verdict={result.verdict.value}, "
-                f"diff_nodes={result.golden_diff_node_count}, "
-                f"GNN_corroboration=p(trojan)={result.trojan_probability:.4f}",
-            )
-
         duration = time.time() - start
         self._record_history(result, duration)
         self._history.end_stage(STAGE, status="completed")
 
         return StageOutcome.ok(result, stage_name=STAGE)
-
-    # ------------------------------------------------------------------
-    # Golden diff merge
-    # ------------------------------------------------------------------
-
-    def _merge_with_golden_diff(
-        self,
-        gnn_result: ClassificationResult,
-        diff_result: ClassificationResult,
-    ) -> ClassificationResult:
-        """Merge golden-diff verdict with GNN corroboration scores.
-
-        The diff result is authoritative for the verdict and suspicious-node
-        list.  GNN per-model scores are preserved as corroboration metadata.
-        For nodes not in the diff, GNN scores are kept but capped below the
-        suspicion threshold so they don't appear as additional suspects.
-        """
-        # Merge gate scores: diff nodes keep 1.0; others keep GNN score (capped).
-        diff_gates = {loc.gate_name for loc in diff_result.trojan_locations}
-        merged_scores: dict[str, float] = {}
-        for gate, gnn_score in gnn_result.gate_suspicion_scores.items():
-            if gate in diff_gates:
-                merged_scores[gate] = 1.0
-            else:
-                merged_scores[gate] = min(gnn_score, SUSPICION_THRESHOLD - 0.01)
-        # Include any diff gates not in the GNN scores dict
-        for gate in diff_gates:
-            if gate not in merged_scores:
-                merged_scores[gate] = 1.0
-
-        return ClassificationResult(
-            verdict=diff_result.verdict,
-            confidence=diff_result.confidence,
-            trojan_probability=diff_result.trojan_probability,
-            gate_suspicion_scores=merged_scores,
-            model_version=diff_result.model_version,
-            architecture="golden_diff+gnn_ensemble",
-            trojan_locations=diff_result.trojan_locations,
-            trojan_node_percentage=diff_result.trojan_node_percentage,
-            trojan_modules=diff_result.trojan_modules,
-            high_risk=diff_result.high_risk,
-            risk_threshold=diff_result.risk_threshold,
-            # GNN ensemble metadata preserved as corroboration
-            ensemble_used=gnn_result.ensemble_used,
-            ensemble_models_run=gnn_result.ensemble_models_run,
-            per_model_results=gnn_result.per_model_results,
-            model_agreement=gnn_result.model_agreement,
-            algorithmic_result=gnn_result.algorithmic_result,
-            golden_diff_used=True,
-            golden_diff_node_count=diff_result.golden_diff_node_count,
-        )
 
     # ------------------------------------------------------------------
     # Model loading
@@ -426,13 +364,28 @@ class EnsembleClassifier:
         high_risk = trojan_percentage >= self._risk_threshold
         trojan_modules = list({loc.module_name for loc in trojan_locations})
 
-        # False-positive sanity check (unchanged)
+        # High-risk override: when node-level analysis finds a significant
+        # fraction of suspicious gates (>= risk threshold) but the graph-level
+        # GNN still says CLEAN, the node evidence should prevail.  This catches
+        # cases where the GNN graph-level head is confused by the dominant clean
+        # logic in a large design, but the node-level scores correctly identify
+        # the trojan subgraph.
+        if high_risk and verdict == TrojanVerdict.CLEAN:
+            verdict = TrojanVerdict.INFECTED
+            self._history.info(
+                STAGE,
+                f"[high_risk_override] Upgraded CLEAN -> INFECTED: "
+                f"{trojan_percentage:.2f}% of nodes flagged (>= {self._risk_threshold}%) "
+                f"with algo_score={algo_result.graph_algo_score:.4f}",
+            )
+
+        # False-positive sanity check
         if verdict == TrojanVerdict.INFECTED:
             should_downgrade, reason = self._is_likely_false_positive(
                 total_nodes, suspicious_count, trojan_percentage,
                 trojan_locations, gate_scores, model_agreement,
             )
-            
+
             if should_downgrade:
                 verdict = TrojanVerdict.UNCERTAIN
                 self._history.warning(STAGE, f"Downgraded INFECTED -> UNCERTAIN: {reason}")
@@ -841,9 +794,6 @@ class EnsembleClassifier:
         self._history.record(STAGE, "ensemble_models_run", result.ensemble_models_run)
         self._history.record(STAGE, "per_model_results", result.per_model_results)
         self._history.record(STAGE, "model_agreement", result.model_agreement)
-        self._history.record(STAGE, "golden_diff_used", result.golden_diff_used)
-        self._history.record(STAGE, "golden_diff_node_count", result.golden_diff_node_count)
-
         if result.algorithmic_result is not None:
             ar = result.algorithmic_result
             self._history.record(STAGE, "algo_graph_score", ar.graph_algo_score)
