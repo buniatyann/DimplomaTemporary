@@ -455,40 +455,62 @@ class MainWindow(QMainWindow):
             return
 
         fmt = self._toolbar.export_format
-        ext = {"json": ".json", "text": ".txt", "pdf": ".pdf"}.get(fmt, ".json")
-        export_path = Path(folder) / f"trojan_detection_results{ext}"
 
         try:
-            import json
-
-            serialisable = {}
-            for path, result in self._last_results.items():
-                serialisable[path] = {
-                    "is_trojan": result.get("is_trojan"),
-                    "confidence": result.get("confidence"),
-                    "verdict": result.get("verdict"),
-                    "export_paths": result.get("export_paths", []),
-                }
-
-            if fmt == "json":
-                export_path.write_text(
-                    json.dumps(serialisable, indent=2), encoding="utf-8"
-                )
-            else:
-                # Text / PDF fallback — write as plain text summary
-                lines = [f"Hardware Trojan Detection Results", "=" * 40, ""]
-                for path, info in serialisable.items():
-                    verdict = info.get("verdict", "N/A")
-                    conf = info.get("confidence", 0.0)
-                    lines.append(f"File: {path}")
-                    lines.append(f"  Verdict:    {verdict}")
-                    lines.append(f"  Confidence: {conf:.1%}")
-                    lines.append("")
-                export_path.write_text("\n".join(lines), encoding="utf-8")
-
-            self._log_panel.log_ok(f"Results exported to {export_path}")
+            written = self._write_exports(Path(folder), fmt)
+            if not written:
+                self._log_panel.log_warning("No reports were written.")
+                return
+            for p in written:
+                self._log_panel.log_ok(f"Results exported to {p}")
         except Exception as exc:
             self._log_panel.log_alert(f"Export failed: {exc}")
+
+    def _write_exports(self, folder: Path, fmt: str) -> list[Path]:
+        """Write per-file reports in *fmt* into *folder*; return written paths."""
+        from backend.analysis_summarizer.models import AnalysisReport
+        from backend.analysis_summarizer.exporters.json_exporter import JsonExporter
+        from backend.analysis_summarizer.exporters.text_exporter import TextExporter
+        from backend.analysis_summarizer.exporters.pdf_exporter import PdfExporter
+
+        folder.mkdir(parents=True, exist_ok=True)
+        written: list[Path] = []
+        used_stems: set[str] = set()
+
+        for src_path, result in self._last_results.items():
+            raw = result.get("raw") or {}
+            report_dict = raw.get("report")
+            if not report_dict:
+                continue
+
+            stem = Path(src_path).stem or "report"
+            unique_stem = stem
+            n = 1
+            while unique_stem in used_stems:
+                n += 1
+                unique_stem = f"{stem}_{n}"
+            used_stems.add(unique_stem)
+
+            per_file_dir = folder / unique_stem
+            per_file_dir.mkdir(exist_ok=True)
+
+            try:
+                analysis_report = AnalysisReport(**report_dict)
+            except Exception:
+                if fmt == "text":
+                    out = per_file_dir / "trojan_analysis_report.txt"
+                    out.write_text(result.get("report_text", ""), encoding="utf-8")
+                    written.append(out)
+                continue
+
+            if fmt == "json":
+                written.append(JsonExporter().export(analysis_report, per_file_dir))
+            elif fmt == "text":
+                written.append(TextExporter().export(analysis_report, per_file_dir))
+            elif fmt == "pdf":
+                written.append(PdfExporter().export(analysis_report, per_file_dir))
+
+        return written
 
     # ------------------------------------------------------------------
     # Persistence

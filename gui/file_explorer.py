@@ -475,7 +475,10 @@ class FileExplorer(QTreeView):
             menu.addAction(remove_act)
 
         elif kind == "dir" and path:
-            run_act = QAction(f"Run: {Path(path).name}/", self)
+            run_act = QAction(f"Run as Design: {Path(path).name}/", self)
+            run_act.setToolTip(
+                "Analyze all Verilog files in this folder together as one design"
+            )
             run_act.triggered.connect(lambda: self.run_dir_requested.emit(path))
             menu.addAction(run_act)
 
