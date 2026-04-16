@@ -70,9 +70,9 @@ def _make_file_item(path: str, show_absolute: bool, status: FileStatus) -> QStan
     return item
 
 
-def _make_dir_item(dir_path: str) -> QStandardItem:
+def _make_dir_item(dir_path: str, display_name: str | None = None) -> QStandardItem:
     """Checkable directory row — children are file items."""
-    dir_name = Path(dir_path).name or dir_path
+    dir_name = display_name or Path(dir_path).name or dir_path
     item = QStandardItem(f"\U0001f4c1  {dir_name}")
     item.setData(dir_path, _ROLE_PATH)
     item.setData("dir", _ROLE_KIND)
@@ -83,6 +83,37 @@ def _make_dir_item(dir_path: str) -> QStandardItem:
     font.setBold(True)
     item.setFont(font)
     return item
+
+
+def _disambiguated_name(new_path: str, existing_paths: list[str]) -> tuple[str, dict[str, str]]:
+    """Return (new_display, updates_for_existing) that uniquely name *new_path*.
+
+    Walks up the path components of *new_path* and any colliding existing path
+    until every display name is unique.  `updates_for_existing` maps each
+    existing path whose display must change to its new display string.
+    """
+    new_p = Path(new_path)
+    conflicts = [p for p in existing_paths if Path(p).name == new_p.name]
+    if not conflicts:
+        return new_p.name or new_path, {}
+
+    candidates = [new_path, *conflicts]
+    depth = 2
+    while True:
+        displays: dict[str, str] = {}
+        for c in candidates:
+            parts = Path(c).parts
+            take = parts[-depth:] if len(parts) >= depth else parts
+            displays[c] = str(Path(*take)) if take else c
+        if len(set(displays.values())) == len(displays):
+            break
+        depth += 1
+        if depth > 16:
+            break
+
+    new_display = displays[new_path]
+    updates = {p: displays[p] for p in conflicts if displays[p] != Path(p).name}
+    return new_display, updates
 
 
 class FileExplorer(QTreeView):
@@ -176,7 +207,16 @@ class FileExplorer(QTreeView):
 
         root_key = str(root)
         if root_key not in self._dir_items:
-            root_item = _make_dir_item(root_key)
+            top_level_paths = [
+                p for p, itm in self._dir_items.items()
+                if itm.parent() is None or itm.parent().data(_ROLE_KIND) != "dir"
+            ]
+            new_display, updates = _disambiguated_name(root_key, top_level_paths)
+            for existing_path, new_name in updates.items():
+                existing_item = self._dir_items.get(existing_path)
+                if existing_item is not None:
+                    existing_item.setText(f"\U0001f4c1  {new_name}")
+            root_item = _make_dir_item(root_key, new_display)
             self._dirs_header.appendRow([root_item])
             self._dir_items[root_key] = root_item
         else:
