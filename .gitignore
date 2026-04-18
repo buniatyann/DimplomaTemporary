@@ -221,3 +221,7 @@ backend/training/top_scores.json
 backend/training/plots/*.png
 backend/training/data/precomputed_graphs/
 backend/training/data/hdl_benchmarks/
+
+# Third-party datasets — fetched separately, not redistributed.
+# See backend/training/data/README.md for download instructions.
+backend/training/data/
