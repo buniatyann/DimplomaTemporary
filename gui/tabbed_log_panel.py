@@ -69,8 +69,15 @@ class TabbedLogPanel(QTabWidget):
     # ------------------------------------------------------------------
     # Report tabs
     # ------------------------------------------------------------------
-    def open_report(self, path: str, report_text: str) -> None:
-        """Open (or focus) a report tab for the given file path."""
+    def open_report(
+        self, path: str, report_text: str, display_name: str | None = None,
+    ) -> None:
+        """Open (or focus) a report tab for the given file path.
+
+        ``display_name`` overrides the tab title and the "Report for …" header
+        when the path is a synthetic key (e.g. ``__design__``) rather than an
+        on-disk file.
+        """
         if path in self._report_tabs:
             viewer = self._report_tabs[path]
             self.setCurrentWidget(viewer)
@@ -81,7 +88,7 @@ class TabbedLogPanel(QTabWidget):
         # Apply same theme as main log
         viewer.set_theme(self._main_log._colours_key)
 
-        name = Path(path).name
+        name = display_name or Path(path).name
         viewer.log_info(f"Report for {name}:")
         viewer.append_plain(report_text)
 

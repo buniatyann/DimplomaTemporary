@@ -147,6 +147,7 @@ class EnsembleClassifier:
         risk_threshold: float = HIGH_RISK_THRESHOLD,
         device: str | None = None,
         selected_models: list[str] | None = None,
+        disable_cascade: bool = False,
     ) -> None:
         self._history = history
         self._model_weights = model_weights or dict(DEFAULT_WEIGHTS)
@@ -154,6 +155,7 @@ class EnsembleClassifier:
         self._confidence_threshold = confidence_threshold
         self._suspicion_threshold = suspicion_threshold
         self._risk_threshold = risk_threshold
+        self._disable_cascade = disable_cascade
         self._model_version = "0.1.0"
         self._parsed_modules: list[ParsedModule] | None = None
 
@@ -321,7 +323,11 @@ class EnsembleClassifier:
                 f"confidence={conf:.4f}",
             )
 
-            if conf >= self._cascade_threshold and len(models_run) < len(self._active_models):
+            if (
+                not self._disable_cascade
+                and conf >= self._cascade_threshold
+                and len(models_run) < len(self._active_models)
+            ):
                 self._history.info(
                     STAGE,
                     f"[ensemble] Cascade early-exit after {arch_name} "

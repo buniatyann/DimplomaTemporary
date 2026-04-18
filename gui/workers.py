@@ -27,11 +27,13 @@ class DesignWorker(QThread):
         self,
         file_paths: list[str],
         selected_models: list[str] | None = None,
+        disable_cascade: bool = False,
         parent=None,  # noqa: ANN001
     ) -> None:
         super().__init__(parent)
         self._file_paths = list(file_paths)
         self._selected_models = selected_models
+        self._disable_cascade = disable_cascade
 
     def run(self) -> None:
         self.started_signal.emit()
@@ -42,6 +44,7 @@ class DesignWorker(QThread):
                 self._file_paths,
                 export_formats=["text"],
                 selected_models=self._selected_models,
+                disable_cascade=self._disable_cascade,
             )
             self.completed.emit(_extract_result(result))
         except Exception as exc:
@@ -66,11 +69,13 @@ class DetectionWorker(QThread):
         self,
         file_paths: list[str],
         selected_models: list[str] | None = None,
+        disable_cascade: bool = False,
         parent=None,  # noqa: ANN001
     ) -> None:
         super().__init__(parent)
         self._file_paths = list(file_paths)
         self._selected_models = selected_models
+        self._disable_cascade = disable_cascade
         self._cancelled = False
 
     # ------------------------------------------------------------------
@@ -92,7 +97,9 @@ class DetectionWorker(QThread):
             self.progress_updated.emit(idx, total)
 
             try:
-                result = self._analyse_file(path, self._selected_models)
+                result = self._analyse_file(
+                    path, self._selected_models, self._disable_cascade,
+                )
                 self.file_completed.emit(path, result)
             except Exception as exc:
                 tb = traceback.format_exc()
@@ -108,6 +115,7 @@ class DetectionWorker(QThread):
     def _analyse_file(
         path: str,
         selected_models: list[str] | None = None,
+        disable_cascade: bool = False,
     ) -> dict[str, Any]:
         """Run the backend pipeline on a single file.
 
@@ -122,6 +130,7 @@ class DetectionWorker(QThread):
                 path,
                 export_formats=["text"],
                 selected_models=selected_models,
+                disable_cascade=disable_cascade,
             )
             return _extract_result(result)
         except Exception:

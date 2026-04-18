@@ -15,15 +15,18 @@ from PySide6.QtWidgets import (
 )
 
 
-# Model configurations: (label, list of architectures to run)
-MODEL_CONFIGS: list[tuple[str, list[str]]] = [
-    ("GCN", ["gcn"]),
-    ("GAT", ["gat"]),
-    ("GIN", ["gin"]),
-    ("GCN + GAT", ["gcn", "gat"]),
-    ("GCN + GIN", ["gcn", "gin"]),
-    ("GAT + GIN", ["gat", "gin"]),
-    ("Ensemble (all)", ["gcn", "gat", "gin"]),
+# Model configurations: (label, list of architectures to run, disable_cascade)
+# When disable_cascade is True, all selected models always run (true ensemble);
+# otherwise, the classifier may early-exit after the first highly confident model.
+MODEL_CONFIGS: list[tuple[str, list[str], bool]] = [
+    ("GCN", ["gcn"], False),
+    ("GAT", ["gat"], False),
+    ("GIN", ["gin"], False),
+    ("GCN + GAT", ["gcn", "gat"], False),
+    ("GCN + GIN", ["gcn", "gin"], False),
+    ("GAT + GIN", ["gat", "gin"], False),
+    ("Cascade (all)", ["gcn", "gat", "gin"], False),
+    ("Ensemble (all)", ["gcn", "gat", "gin"], True),
 ]
 
 # Number of items visible in the popup at once (rest scroll)
@@ -45,8 +48,8 @@ class _ModelPopup(QFrame):
             "QListWidget { font-size: 14px; }"
             "QListWidget::item { padding: 6px 4px; }"
         )
-        for label, _ in MODEL_CONFIGS:
-            self._list.addItem(label)
+        for entry in MODEL_CONFIGS:
+            self._list.addItem(entry[0])
 
         self._list.setCurrentRow(current_index)
         self._list.itemClicked.connect(self._on_click)
@@ -97,7 +100,7 @@ class Toolbar(QToolBar):
     export_results_clicked = Signal()
     toggle_paths_clicked = Signal()
     export_format_changed = Signal(str)    # "json", "text", or "pdf"
-    model_selection_changed = Signal(list) # list of architecture names
+    model_selection_changed = Signal(list, bool) # (architecture names, disable_cascade)
     theme_toggled = Signal(str)            # "dark" or "light"
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -217,7 +220,7 @@ class Toolbar(QToolBar):
         # ── Model Selector (button that opens a scrollable popup) ──
         self._selected_model_idx = len(MODEL_CONFIGS) - 1  # default: Ensemble
         self._model_button = QToolButton(self)
-        self._model_button.setText(f"Model: {MODEL_CONFIGS[self._selected_model_idx][0]}")
+        self._model_button.setText(f"Model: {MODEL_CONFIGS[self._selected_model_idx][0]}")  # noqa: E501
         self._model_button.setToolTip("Select classification model(s)")
         self._model_button.clicked.connect(self._show_model_popup)
         self.addWidget(self._model_button)
@@ -240,6 +243,11 @@ class Toolbar(QToolBar):
         """Return the list of architecture names for the current selection."""
         return list(MODEL_CONFIGS[self._selected_model_idx][1])
 
+    @property
+    def disable_cascade(self) -> bool:
+        """True when the active selection forces every model to run (no early-exit)."""
+        return MODEL_CONFIGS[self._selected_model_idx][2]
+
     def _show_model_popup(self) -> None:
         """Open a scrollable list popup below the model button."""
         popup = _ModelPopup(self._selected_model_idx, parent=self)
@@ -252,9 +260,9 @@ class Toolbar(QToolBar):
 
     def _set_model(self, index: int) -> None:
         self._selected_model_idx = index
-        label, archs = MODEL_CONFIGS[index]
+        label, archs, disable_cascade = MODEL_CONFIGS[index]
         self._model_button.setText(f"Model: {label}")
-        self.model_selection_changed.emit(list(archs))
+        self.model_selection_changed.emit(list(archs), disable_cascade)
 
     # ------------------------------------------------------------------
     # Theme toggle

@@ -31,6 +31,7 @@ class DetectorAPI:
         output_dir: str | Path | None = None,
         export_formats: list[str] | None = None,
         selected_models: list[str] | None = None,
+        disable_cascade: bool = False,
     ) -> dict[str, Any]:
         """Analyze a single Verilog file.
 
@@ -40,6 +41,9 @@ class DetectorAPI:
             export_formats: List of export formats.
             selected_models: List of model architectures to use
                 (e.g. ["gcn"], ["gcn", "gat"], or None for all).
+            disable_cascade: When True, every selected model runs and the
+                results are averaged (true ensemble). When False (default),
+                models run in cascade order with early-exit on high confidence.
 
         Returns:
             Dictionary containing the analysis report and export paths.
@@ -49,6 +53,7 @@ class DetectorAPI:
             output_dir=Path(output_dir) if output_dir else None,
             export_formats=export_formats,
             selected_models=selected_models,
+            disable_cascade=disable_cascade,
         )
 
     def analyze_directory(
@@ -153,6 +158,7 @@ class DetectorAPI:
         output_dir: str | Path | None = None,
         export_formats: list[str] | None = None,
         selected_models: list[str] | None = None,
+        disable_cascade: bool = False,
     ) -> dict[str, Any]:
         """Analyze an explicit list of files as a single combined design.
 
@@ -174,6 +180,7 @@ class DetectorAPI:
             output_dir=Path(output_dir) if output_dir else None,
             export_formats=export_formats,
             selected_models=selected_models,
+            disable_cascade=disable_cascade,
         )
 
     def cancel(self) -> None:

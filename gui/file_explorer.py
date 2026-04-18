@@ -38,6 +38,20 @@ from gui.state import FILE_STATUS_ICONS, AppStateManager, FileStatus
 _VERILOG_FILTER = "Verilog Files (*.v *.sv *.vh)"
 _VERILOG_SUFFIXES = {".v", ".sv", ".vh"}
 
+
+def _is_alive(item: QStandardItem) -> bool:
+    """True if the underlying C++ QStandardItem still exists.
+
+    Qt deletes child items when their parent row is removed; any stale
+    Python reference left in our tracking dicts will raise RuntimeError on
+    the next attribute access. Touching `.model()` is the cheapest probe.
+    """
+    try:
+        item.model()
+    except RuntimeError:
+        return False
+    return True
+
 # Role constants for item data
 _ROLE_PATH = Qt.ItemDataRole.UserRole          # absolute file/dir path
 _ROLE_KIND = Qt.ItemDataRole.UserRole + 1      # "file", "dir", "section"
@@ -206,6 +220,11 @@ class FileExplorer(QTreeView):
         added: list[str] = []
 
         root_key = str(root)
+        # Drop any stale tracking entries whose Qt items were already
+        # destroyed (e.g. left over from a removed folder). Touching them
+        # below would raise RuntimeError.
+        for stale_path in [p for p, itm in self._dir_items.items() if not _is_alive(itm)]:
+            self._dir_items.pop(stale_path, None)
         if root_key not in self._dir_items:
             top_level_paths = [
                 p for p, itm in self._dir_items.items()
@@ -282,12 +301,27 @@ class FileExplorer(QTreeView):
     def checked_paths(self) -> list[str]:
         """Return paths of all checked file items (both sections)."""
         result: list[str] = []
+        stale: list[str] = []
         for path, item in self._file_items.items():
+            if not _is_alive(item):
+                stale.append(path)
+                continue
             if item.checkState() == Qt.CheckState.Checked:
                 result.append(path)
+        for path in stale:
+            self._file_items.pop(path, None)
+            self._all_paths.discard(path)
+
+        stale.clear()
         for path, item in self._dir_file_items.items():
+            if not _is_alive(item):
+                stale.append(path)
+                continue
             if item.checkState() == Qt.CheckState.Checked:
                 result.append(path)
+        for path in stale:
+            self._dir_file_items.pop(path, None)
+            self._all_paths.discard(path)
         return result
 
     def all_paths(self) -> list[str]:
@@ -301,6 +335,9 @@ class FileExplorer(QTreeView):
         # Collect dir items that are fully checked — remove the whole subtree
         dirs_to_remove: list[QStandardItem] = []
         for dir_path, dir_item in list(self._dir_items.items()):
+            if not _is_alive(dir_item):
+                self._dir_items.pop(dir_path, None)
+                continue
             if dir_item.checkState() == Qt.CheckState.Checked:
                 # Only remove top-level checked dirs (children will be covered)
                 parent = dir_item.parent()
@@ -335,8 +372,14 @@ class FileExplorer(QTreeView):
 
     def _remove_dir_subtree(self, dir_item: QStandardItem) -> None:
         """Recursively remove all files and subdirs under *dir_item*, then remove it."""
-        for row in range(dir_item.rowCount()):
-            child = dir_item.child(row, 0)
+        # Snapshot children up front: the recursive call into a subdir
+        # detaches that child's row, which would shift indices and cause
+        # `for row in range(rowCount())` to skip siblings — leaving stale
+        # entries in _dir_items that block re-uploading the same folder.
+        children = [
+            dir_item.child(row, 0) for row in range(dir_item.rowCount())
+        ]
+        for child in children:
             if child is None:
                 continue
             kind = child.data(_ROLE_KIND)

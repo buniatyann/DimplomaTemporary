@@ -168,10 +168,16 @@ class MainWindow(QMainWindow):
         self._design_files = list(files)
         self._state_mgr.set_state(AppState.PROCESSING)
         selected = self._toolbar.selected_models
+        disable_cascade = self._toolbar.disable_cascade
         self._log_panel.log_info(
             f"Running design analysis on {Path(dir_path).name}/ ({len(files)} file(s))…"
         )
-        self._worker = DesignWorker(files, selected_models=selected, parent=self)
+        self._worker = DesignWorker(
+            files,
+            selected_models=selected,
+            disable_cascade=disable_cascade,
+            parent=self,
+        )
         self._worker.started_signal.connect(
             lambda: self._status_bar.showMessage(f"Analysing {Path(dir_path).name}/…")
         )
@@ -227,7 +233,10 @@ class MainWindow(QMainWindow):
 
         self._state_mgr.set_state(AppState.PROCESSING)
         selected = self._toolbar.selected_models
+        disable_cascade = self._toolbar.disable_cascade
         model_desc = ", ".join(m.upper() for m in selected)
+        if disable_cascade and len(selected) > 1:
+            model_desc += " (ensemble)"
         self._log_panel.log_info(
             f"Starting detection on {len(paths)} file(s) using {model_desc}..."
         )
@@ -235,6 +244,7 @@ class MainWindow(QMainWindow):
         self._worker = DetectionWorker(
             paths,
             selected_models=selected,
+            disable_cascade=disable_cascade,
             parent=self,
         )
         self._worker.file_started.connect(self._on_file_started)
@@ -270,7 +280,10 @@ class MainWindow(QMainWindow):
         self._design_files = list(paths)
         self._state_mgr.set_state(AppState.PROCESSING)
         selected = self._toolbar.selected_models
+        disable_cascade = self._toolbar.disable_cascade
         model_desc = ", ".join(m.upper() for m in selected)
+        if disable_cascade and len(selected) > 1:
+            model_desc += " (ensemble)"
         self._log_panel.log_info(
             f"Analyzing {len(paths)} file(s) as a single design using {model_desc}..."
         )
@@ -278,6 +291,7 @@ class MainWindow(QMainWindow):
         self._worker = DesignWorker(
             paths,
             selected_models=selected,
+            disable_cascade=disable_cascade,
             parent=self,
         )
         self._worker.started_signal.connect(lambda: self._status_bar.showMessage("Analyzing design..."))
@@ -322,7 +336,13 @@ class MainWindow(QMainWindow):
 
         report_text = result.get("report_text", "")
         if report_text:
-            self._log_panel.open_report("__design__", report_text)
+            self._log_panel.open_report(
+                "__design__", report_text, display_name="Design Report",
+            )
+            # Make the design report retrievable per-file: double-clicking any
+            # contributing file in the explorer should open the same report.
+            for p in self._design_files:
+                self._last_results[p] = result
 
         self._status_bar.showMessage(f"Design: {verdict} ({confidence:.1%})")
 

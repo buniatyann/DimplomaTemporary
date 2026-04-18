@@ -44,6 +44,7 @@ class DetectionPipeline:
         output_dir: Path | None = None,
         export_formats: list[str] | None = None,
         selected_models: list[str] | None = None,
+        disable_cascade: bool = False,
     ) -> dict[str, Any]:
         """Execute the full detection pipeline on a single file or directory.
 
@@ -109,7 +110,9 @@ class DetectionPipeline:
         # Stage 5: Trojan Classification (ensemble: GCN → GIN → GAT cascade)
         self._report_progress("trojan_classifier", 5, total_stages)
         classifier = EnsembleClassifier(
-            history, selected_models=selected_models,
+            history,
+            selected_models=selected_models,
+            disable_cascade=disable_cascade,
         )
         classify_outcome = classifier.process(
             graph_outcome.data,
@@ -251,6 +254,7 @@ class DetectionPipeline:
         output_dir: Path | None = None,
         export_formats: list[str] | None = None,
         selected_models: list[str] | None = None,
+        disable_cascade: bool = False,
     ) -> dict[str, Any]:
         """Analyze an explicit list of files as a single combined design.
 
@@ -334,7 +338,11 @@ class DetectionPipeline:
 
         # Stage 5: Trojan Classification
         self._report_progress("trojan_classifier", 5, total_stages)
-        classifier = EnsembleClassifier(history, selected_models=selected_models)
+        classifier = EnsembleClassifier(
+            history,
+            selected_models=selected_models,
+            disable_cascade=disable_cascade,
+        )
         classify_outcome = classifier.process(
             graph_outcome.data,
             parsed_modules=parse_outcome.data if parse_outcome.success else None,
