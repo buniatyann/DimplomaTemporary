@@ -24,7 +24,7 @@ The tool processes HDL source files through a 6-stage pipeline — from file ing
 
 - **Multi-format parsing** — supports Verilog (`.v`, `.vh`) and SystemVerilog (`.sv`) via pyslang
 - **Yosys-based synthesis** — elaborates netlists into a normalized JSON representation
-- **GNN ensemble classification** — three interchangeable architectures (GCN, GAT, GIN) with pretrained weights; cascade + weighted-average fusion
+- **GNN ensemble classification** — three interchangeable architectures (GCN, GAT, GIN) with pretrained weights; cascade with early-exit *or* full-ensemble weighted-average fusion (user-selectable)
 - **Algorithmic analysis** — SCOAP controllability/observability metrics and Cone of Influence reachability scoring, integrated with GNN for combined verdict
 - **Trojan localization** — reports suspicious gates with exact `file:line` source locations, SCOAP profile, and output cone
 - **Multiple export formats** — JSON, PDF, and plain text reports
@@ -175,7 +175,12 @@ Classification uses a two-component hybrid:
 
 ### GNN Ensemble
 
-Three GNN architectures (GCN, GAT, GIN) are run in cascade order. If any model produces a confidence ≥ 0.92, remaining models are skipped. Otherwise, all results are combined via weighted average (GCN: 0.30, GAT: 0.35, GIN: 0.35). The ensemble produces a graph-level verdict (CLEAN / INFECTED / UNCERTAIN) and per-node suspicion scores.
+Three GNN architectures (GCN, GAT, GIN) are available, with two fusion strategies:
+
+- **Cascade (all)** — models run in cascade order; if any model produces a confidence ≥ 0.92, the remaining models are skipped. Otherwise the partial results are combined via weighted average. Faster on confident inputs.
+- **Ensemble (all)** — every model always runs and the per-model graph- and node-level probabilities are combined via weighted average (GCN: 0.30, GAT: 0.35, GIN: 0.35). Slower but uses all three signals on every input.
+
+Either mode produces a graph-level verdict (CLEAN / INFECTED / UNCERTAIN) and per-node suspicion scores. Single architectures (GCN-only, GAT-only, GIN-only) and pairs (GCN+GAT, GCN+GIN, GAT+GIN) are also selectable from the GUI's Model dropdown.
 
 ### Algorithmic Analysis (SCOAP + CoI)
 
@@ -289,9 +294,10 @@ The PySide6-based graphical interface provides:
 - File and directory selection with recursive tree display (folders shown with full subfolder/file hierarchy)
 - Drag-and-drop support for files and directories
 - Real-time pipeline progress and status reporting
-- Interactive log viewer
+- Interactive log viewer with per-file report tabs (double-click a file to open its report)
 - Report preview in all export formats
-- Settings panel for architecture, confidence threshold, and device selection
+- Toolbar **Model** dropdown to pick GCN / GAT / GIN, any pair, **Cascade (all)** (early-exit), or **Ensemble (all)** (always run all three)
+- "Run as Design" mode: synthesize multiple checked files together as a single design (cross-module connections visible to the GNN); the resulting "Design Report" tab is also reachable by double-clicking any contributing file
 - Asynchronous processing with cancellation support
 
 Install GUI dependencies:
