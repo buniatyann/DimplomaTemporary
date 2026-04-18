@@ -225,3 +225,6 @@ backend/training/data/hdl_benchmarks/
 # Third-party datasets — fetched separately, not redistributed.
 # See backend/training/data/README.md for download instructions.
 backend/training/data/
+
+# Vast.ai training notebook — kept local, not published.
+training_vastai.ipynb
