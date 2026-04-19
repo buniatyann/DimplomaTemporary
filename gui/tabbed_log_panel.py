@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QTabBar, QTabWidget, QWidget
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtWidgets import QStyle, QTabBar, QTabWidget, QToolButton, QWidget
 
 from gui.log_viewer import LogViewer
 
@@ -94,8 +94,25 @@ class TabbedLogPanel(QTabWidget):
 
         idx = self.addTab(viewer, name)
         self.setTabToolTip(idx, path)
+        self._install_close_button(idx)
         self.setCurrentIndex(idx)
         self._report_tabs[path] = viewer
+
+    def _install_close_button(self, index: int) -> None:
+        """Force a visible close (×) button on the right side of the tab."""
+        btn = QToolButton(self.tabBar())
+        btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton))
+        btn.setIconSize(QSize(10, 10))
+        btn.setFixedSize(12, 12)
+        btn.setAutoRaise(True)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip("Close tab")
+        btn.setStyleSheet(
+            "QToolButton { border: none; background: transparent; padding: 0; margin: 0; }"
+            "QToolButton:hover { background: rgba(255, 255, 255, 30); border-radius: 2px; }"
+        )
+        btn.clicked.connect(lambda: self._close_tab(self.tabBar().tabAt(btn.pos())))
+        self.tabBar().setTabButton(index, QTabBar.ButtonPosition.RightSide, btn)
 
     # ------------------------------------------------------------------
     # Theme support

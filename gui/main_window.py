@@ -75,11 +75,14 @@ class MainWindow(QMainWindow):
         # ── Connect signals ──
         self._connect_signals()
 
-        # ── Reports directory ──
+        # ── Reports directory (asked from main(); see prompt_reports_dir) ──
         self._reports_dir: str = self._config.reports_directory
-        self._ask_reports_dir()
 
         self._log_panel.log_info("Hardware Trojan Detector ready.")
+
+    def prompt_reports_dir(self) -> bool:
+        """Show the startup reports-directory dialog. Returns False if cancelled."""
+        return self._ask_reports_dir()
 
     # ------------------------------------------------------------------
     # Stylesheet
@@ -96,18 +99,16 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Reports directory
     # ------------------------------------------------------------------
-    def _ask_reports_dir(self) -> None:
-        """Show the reports-directory dialog on startup."""
+    def _ask_reports_dir(self) -> bool:
+        """Show the reports-directory dialog on startup. Returns False if cancelled."""
         dlg = ReportsDirDialog(last_reports_dir=self._reports_dir, parent=self)
-        if dlg.exec() == ReportsDirDialog.DialogCode.Accepted:
-            self._reports_dir = dlg.chosen_directory
-            self._config.reports_directory = self._reports_dir
-            self._config.save()
-            self._log_panel.log_info(f"Reports directory: {self._reports_dir}")
-        else:
-            # User cancelled — keep previous or fall back to cwd
-            if not self._reports_dir:
-                self._reports_dir = str(Path.cwd())
+        if dlg.exec() != ReportsDirDialog.DialogCode.Accepted:
+            return False
+        self._reports_dir = dlg.chosen_directory
+        self._config.reports_directory = self._reports_dir
+        self._config.save()
+        self._log_panel.log_info(f"Reports directory: {self._reports_dir}")
+        return True
 
     # ------------------------------------------------------------------
     # Signal wiring

@@ -15,8 +15,10 @@ def main() -> int:
     app.setOrganizationName("TrojanDetector")
 
     window = MainWindow()
-    window.show()
+    if not window.prompt_reports_dir():
+        return 0
 
+    window.show()
     return app.exec()
 
 
