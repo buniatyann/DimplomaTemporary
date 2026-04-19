@@ -22,6 +22,7 @@ class DesignWorker(QThread):
     started_signal = Signal()
     completed = Signal(object)   # result dict
     error = Signal(str)
+    cancelled_signal = Signal()
 
     def __init__(
         self,
@@ -34,9 +35,16 @@ class DesignWorker(QThread):
         self._file_paths = list(file_paths)
         self._selected_models = selected_models
         self._disable_cascade = disable_cascade
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
 
     def run(self) -> None:
         self.started_signal.emit()
+        if self._cancelled:
+            self.cancelled_signal.emit()
+            return
         try:
             from backend.api.detector_api import DetectorAPI
             api = DetectorAPI()
@@ -46,8 +54,14 @@ class DesignWorker(QThread):
                 selected_models=self._selected_models,
                 disable_cascade=self._disable_cascade,
             )
+            if self._cancelled:
+                self.cancelled_signal.emit()
+                return
             self.completed.emit(_extract_result(result))
         except Exception as exc:
+            if self._cancelled:
+                self.cancelled_signal.emit()
+                return
             tb = traceback.format_exc()
             logger.error("Design analysis failed:\n%s", tb)
             self.error.emit(str(exc))

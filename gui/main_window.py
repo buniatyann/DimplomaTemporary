@@ -354,10 +354,20 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage("Design analysis failed")
 
     def _stop_detection(self) -> None:
-        if self._worker:
-            self._state_mgr.set_state(AppState.CANCELLING)
-            self._log_panel.log_warning("Cancelling detection...")
-            self._worker.cancel()
+        if not self._worker or not self._worker.isRunning():
+            return
+        self._state_mgr.set_state(AppState.CANCELLING)
+        self._log_panel.log_warning("Cancelling detection...")
+        self._worker.cancel()
+        # The backend pipeline does not poll for cancellation, so a soft cancel
+        # only takes effect between files. Force-terminate so the user sees an
+        # immediate stop on long-running stages (Yosys, GNN inference).
+        if not self._worker.wait(500):
+            self._worker.terminate()
+            self._worker.wait(2000)
+            self._log_panel.log_warning("Detection forcibly stopped.")
+        self._state_mgr.set_state(AppState.IDLE)
+        self._status_bar.showMessage("Cancelled")
 
     # ------------------------------------------------------------------
     # Worker callbacks (run on main thread via signals)
