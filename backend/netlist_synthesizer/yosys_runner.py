@@ -30,7 +30,9 @@ def _to_short_path(p: str | Path) -> str:
 class YosysRunner:
     """Manages subprocess communication with the Yosys synthesis tool."""
 
-    def __init__(self, timeout: int = 1800) -> None:
+    def __init__(self, timeout: int | None = None) -> None:
+        # `None` means "no time limit" — Yosys runs until it finishes or the
+        # user cancels via the GUI Stop button.
         self._timeout = timeout
         self._yosys_path = shutil.which("yosys")
 
@@ -128,6 +130,7 @@ class YosysRunner:
                     cwd=tmpdir,
                 )
             except subprocess.TimeoutExpired as e:
+                # Only reachable if a caller passed a non-None timeout.
                 raise SynthesisError(
                     f"Yosys timed out after {self._timeout} seconds",
                     yosys_output=str(e),

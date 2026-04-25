@@ -22,7 +22,9 @@ STAGE = "netlist_synthesizer"
 class NetlistSynthesizer:
     """Validates netlist synthesizability and extracts structural information using Yosys."""
 
-    def __init__(self, history: History, timeout: int = 300) -> None:
+    def __init__(self, history: History, timeout: int | None = None) -> None:
+        # `None` (default) disables the timeout entirely; cancellation is
+        # handled by the GUI Stop button, not by a hard time limit.
         self._history = history
         self._runner = YosysRunner(timeout=timeout)
 
