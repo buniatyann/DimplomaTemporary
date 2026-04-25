@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -29,6 +30,10 @@ class _NewFolderDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Create New Folder")
         self.setMinimumWidth(460)
+
+        system_qss = _load_system_stylesheet()
+        if system_qss:
+            self.setStyleSheet(system_qss)
 
         self._parent_edit = QLineEdit(start_parent)
         browse = QPushButton("Browse…")
@@ -73,14 +78,58 @@ class _NewFolderDialog(QDialog):
         return self._name_edit.text().strip()
 
 
+def _detect_system_theme() -> str:
+    """Return "dark" if the OS reports a dark color scheme, otherwise "light".
+
+    Uses Qt's QStyleHints.colorScheme() (Qt 6.5+); falls back to comparing
+    the palette's window background luminance for older Qt versions.
+    """
+    app = QGuiApplication.instance()
+    if app is None:
+        return "light"
+    hints = app.styleHints()
+    scheme = getattr(hints, "colorScheme", None)
+    if scheme is not None:
+        try:
+            value = scheme()
+            if int(value) == int(Qt.ColorScheme.Dark):
+                return "dark"
+            if int(value) == int(Qt.ColorScheme.Light):
+                return "light"
+        except (TypeError, ValueError):
+            pass
+    bg = app.palette().window().color()
+    luminance = (0.299 * bg.red() + 0.587 * bg.green() + 0.114 * bg.blue()) / 255.0
+    return "dark" if luminance < 0.5 else "light"
+
+
+def _load_system_stylesheet() -> str:
+    """Load the QSS matching the system's color scheme."""
+    theme = _detect_system_theme()
+    qss_path = Path(__file__).parent / "styles" / f"{theme}_theme.qss"
+    try:
+        return qss_path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
 class ReportsDirDialog(QDialog):
-    """Shown once on startup to pick the reports output directory."""
+    """Shown once on startup to pick the reports output directory.
+
+    Renders in the system color scheme (dark if the OS theme is dark,
+    light otherwise), independent of the main window's chosen theme.
+    """
 
     def __init__(self, last_reports_dir: str = "", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Reports Save Location")
         self.setMinimumWidth(480)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+
+        # Force the light theme on this dialog (overrides any inherited dark QSS).
+        system_qss = _load_system_stylesheet()
+        if system_qss:
+            self.setStyleSheet(system_qss)
 
         self._chosen_dir: str = ""
 
