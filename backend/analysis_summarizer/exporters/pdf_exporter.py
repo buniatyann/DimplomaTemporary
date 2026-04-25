@@ -182,9 +182,55 @@ class PdfExporter:
                     [entry["gate"], f"{entry['score']:.6f}"]
                     for entry in suspicious
                 ]
-        
+
                 elements.append(self._make_table(sg_data, header=True))
-        
+
+            # Trojan locations (file:line provenance grouped by module)
+            locations_by_module = cr.get("trojan_locations_by_module", {})
+            trojan_modules = cr.get("trojan_modules", [])
+            high_risk = cr.get("high_risk", False)
+            node_pct = cr.get("trojan_node_percentage", 0.0)
+
+            if locations_by_module or trojan_modules or high_risk:
+                elements.append(Spacer(1, 5 * mm))
+                elements.append(Paragraph("Trojan Locations", heading_style))
+
+                if high_risk:
+                    elements.append(Paragraph(
+                        f"<b>HIGH RISK:</b> {node_pct:.2f}% of nodes flagged as suspicious.",
+                        body_style,
+                    ))
+                    elements.append(Spacer(1, 2 * mm))
+
+                if trojan_modules:
+                    elements.append(Paragraph(
+                        f"<b>Affected modules:</b> {', '.join(trojan_modules)}",
+                        body_style,
+                    ))
+                    elements.append(Spacer(1, 3 * mm))
+
+                if locations_by_module:
+                    loc_header = ["Module", "Gate", "Type", "Location", "Score"]
+                    loc_rows: list[list[str]] = [loc_header]
+                    for module_name, gates in locations_by_module.items():
+                        for gate in gates:
+                            file_str = gate.get("file") or ""
+                            line_val = gate.get("line")
+                            if file_str and line_val:
+                                location = f"{file_str}:{line_val}"
+                            elif file_str:
+                                location = file_str
+                            else:
+                                location = ""
+                            loc_rows.append([
+                                module_name,
+                                str(gate.get("gate", "unknown")),
+                                str(gate.get("type", "")),
+                                location,
+                                f"{gate.get('score', 0.0):.4f}",
+                            ])
+                    elements.append(self._make_table(loc_rows, header=True))
+
             elements.append(Spacer(1, 5 * mm))
 
         # Warnings
