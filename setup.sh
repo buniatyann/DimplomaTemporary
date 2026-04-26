@@ -62,41 +62,22 @@ info "Activated venv ($VENV_DIR)"
 info "Upgrading pip..."
 pip install --upgrade pip setuptools wheel --quiet
 
-# ── Install PyTorch (with CUDA if available) ──────────────────
+# ── Install PyTorch ───────────────────────────────────────────
+# pip will fetch the CUDA-enabled wheel automatically when a compatible
+# GPU + driver is detected. torchvision/torchaudio aren't used anywhere
+# in the project, so they're skipped.
 info "Installing PyTorch..."
-if python -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then
-    info "CUDA detected — installing GPU-enabled PyTorch"
-    pip install torch torchvision torchaudio --quiet
-else
-    # Try to install with CUDA support first; the user may have a GPU
-    # but no torch installed yet to test with.
-    pip install torch torchvision torchaudio --quiet
-fi
+pip install torch
 
-# ── Install PyTorch Geometric + extensions ────────────────────
-info "Installing PyTorch Geometric..."
-TORCH_VERSION=$(python -c "import torch; print(torch.__version__.split('+')[0])")
-CUDA_TAG=$(python -c "import torch; print(torch.version.cuda.replace('.','') if torch.cuda.is_available() else 'cpu')")
-
-pip install torch-geometric --quiet
-
-# torch-sparse, torch-scatter, torch-cluster, torch-spline-conv
-# These need to match torch + CUDA versions.
-info "Installing PyG extensions (torch=$TORCH_VERSION, cuda=$CUDA_TAG) ..."
-PYG_URL="https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_TAG}.html"
-pip install torch-scatter torch-sparse torch-cluster torch-spline-conv \
-    -f "$PYG_URL" --quiet 2>/dev/null || {
-    warn "Could not install PyG extensions from $PYG_URL"
-    warn "Trying without explicit index (may compile from source)..."
-    pip install torch-scatter torch-sparse torch-cluster torch-spline-conv --quiet || true
-}
-
-# ── Install the project ──────────────────────────────────────
+# ── Install the project (pulls torch-geometric + remaining deps) ─
+# torch-geometric ≥2.3 bundles its own scatter/sparse ops, so the old
+# torch-scatter/torch-sparse/torch-cluster/torch-spline-conv wheels are
+# no longer required.
 info "Installing trojan-detector package..."
 if [ -n "$EXTRAS" ]; then
-    pip install -e ".[$EXTRAS]" --quiet
+    pip install -e ".[$EXTRAS]"
 else
-    pip install -e . --quiet
+    pip install -e .
 fi
 
 # ── Check Yosys ──────────────────────────────────────────────
@@ -110,13 +91,6 @@ else
     warn "  macOS:         brew install yosys"
     warn "  From source:   https://github.com/YosysHQ/yosys"
 fi
-
-# ── Download training datasets ───────────────────────────────
-info "Setting up training dataset directory structure..."
-python -m backend.training.download_extended_datasets 2>/dev/null || {
-    warn "Dataset download script failed (non-critical). You can run it later:"
-    warn "  python -m backend.training.download_extended_datasets"
-}
 
 # ── Verify installation ──────────────────────────────────────
 info "Verifying installation..."
@@ -153,6 +127,8 @@ echo "  Activate the environment:  source $VENV_DIR/bin/activate"
 echo ""
 echo "  Run the detector (CLI):    python -m main <file.v> -o reports/ -f text json"
 echo "  Run the detector (GUI):    python -m main"
+echo ""
+echo "  Training datasets:  fetched separately (see backend/training/data/README.md)"
 echo ""
 echo "  Train models:  see training_scripts/ folder"
 echo "    ./training_scripts/train_gcn.sh"
